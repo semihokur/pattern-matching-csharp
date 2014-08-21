@@ -110,6 +110,9 @@ namespace Microsoft.CodeAnalysis.CSharp
                     { WasCompilerGenerated = true })
                 { WasCompilerGenerated = true };
 
+            if (syntax.Kind == SyntaxKind.RecordParameter)
+                return boundStatement;
+
             Debug.Assert(syntax is ExpressionSyntax); // Should be the initial value.
             Debug.Assert(syntax.Parent.Kind == SyntaxKind.EqualsValueClause);
             switch (syntax.Parent.Parent.Kind)

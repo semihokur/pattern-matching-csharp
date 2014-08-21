@@ -217,6 +217,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         {
             Debug.Assert(
                 kind == SyntaxKind.ClassDeclaration ||
+                kind == SyntaxKind.RecordDeclaration ||
                 kind == SyntaxKind.StructDeclaration ||
                 kind == SyntaxKind.InterfaceDeclaration ||
                 kind == SyntaxKind.EnumDeclaration ||

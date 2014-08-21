@@ -30,7 +30,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             Binder context,
             Symbol owner,
             TypeSymbol parameterType,
-            ParameterSyntax syntax,
+            IParameterSyntax syntax,
             RefKind refKind,
             SyntaxToken identifier,
             int ordinal,

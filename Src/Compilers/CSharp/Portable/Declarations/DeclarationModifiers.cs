@@ -33,11 +33,11 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         Indexer = 1 << 18, // not a real modifier, but used to record that indexer syntax was used. Sharing this bit with PrimaryCtor.
         PrimaryCtor = 1 << 18, // not a real modifier, but used to record that this is a primary constructor. Sharing this bit with Indexer.
-
         Async = 1 << 19,
 
         All = (Async | (Async - 1)), // all modifiers
-        Unset = 1 << 20, // used when a modifiers value hasn't yet been computed
+        Record = 1 << 20,
+        Unset = 1 << 21, // used when a modifiers value hasn't yet been computed
 
         AccessibilityMask = Private | Protected | Internal | ProtectedInternal | Public,
     }

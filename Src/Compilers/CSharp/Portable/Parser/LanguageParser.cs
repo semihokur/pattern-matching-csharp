@@ -1164,26 +1164,28 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             return syntaxFactory.AttributeArgument(nameEquals, nameColon, expr);
         }
 
+        // TODO: change to 1<<n style
         [Flags]
         private enum SyntaxModifier
         {
             None = 0,
-            Public = 0x0001,
-            Internal = 0x0002,
-            Protected = 0x0004,
-            Private = 0x0008,
-            Sealed = 0x0010,
-            Abstract = 0x0020,
-            Static = 0x0040,
-            Virtual = 0x0080,
-            Extern = 0x0100,
-            New = 0x0200,
-            Override = 0x0400,
-            ReadOnly = 0x0800,
-            Volatile = 0x1000,
-            Unsafe = 0x2000,
-            Partial = 0x4000,
-            Async = 0x8000
+            Public = 0x00001,
+            Internal = 0x00002,
+            Protected = 0x00004,
+            Private = 0x00008,
+            Sealed = 0x00010,
+            Abstract = 0x00020,
+            Static = 0x00040,
+            Virtual = 0x00080,
+            Extern = 0x00100,
+            New = 0x00200,
+            Override = 0x00400,
+            ReadOnly = 0x00800,
+            Volatile = 0x01000,
+            Unsafe = 0x02000,
+            Partial = 0x04000,
+            Async = 0x08000,
+            Record = 0x10000
         }
 
         private const SyntaxModifier AccessModifiers = SyntaxModifier.Public | SyntaxModifier.Internal | SyntaxModifier.Protected | SyntaxModifier.Private;
@@ -1227,6 +1229,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                             return SyntaxModifier.Partial;
                         case SyntaxKind.AsyncKeyword:
                             return SyntaxModifier.Async;
+                        case SyntaxKind.RecordKeyword:
+                            return SyntaxModifier.Record;
                     }
 
                     goto default;
@@ -1274,6 +1278,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             while (true)
             {
                 var newMod = GetModifier(this.CurrentToken);
+                if (newMod == SyntaxModifier.Record && !IsRecordsEnabled)
+                {
+                    newMod = SyntaxModifier.None;
+                }
+
                 if (newMod == SyntaxModifier.None)
                 {
                     break;
@@ -1556,6 +1565,19 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             // "top-level" expressions and statements should never occur inside an asynchronous context
             Debug.Assert(!IsInAsync);
 
+            var tokenList = modifiers.ToTokenList();
+            bool isRecord = false;
+            if (IsRecordsEnabled)
+            {
+                foreach (var modifier in tokenList)
+                {
+                    if (!isRecord)
+                    {
+                        isRecord = modifier.ContextualKind == SyntaxKind.RecordKeyword;
+                    }
+                }
+            }
+
             var classOrStructOrInterface = this.EatToken();
             var saveTerm = this.termState;
             this.termState |= TerminatorState.IsPossibleAggregateClauseStartOrStop;
@@ -1564,11 +1586,20 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
             // Primary constructor parameters
             ParameterListSyntax parameterList = null;
+            RecordParameterListSyntax recordParameterList = null;
             if (this.CurrentToken.Kind == SyntaxKind.OpenParenToken &&
                 (classOrStructOrInterface.Kind == SyntaxKind.ClassKeyword || classOrStructOrInterface.Kind == SyntaxKind.StructKeyword))
             {
-                parameterList = this.ParseParenthesizedParameterList(allowThisKeyword: false, allowDefaults: true, allowAttributes: true);
-                parameterList = CheckFeatureAvailability(parameterList, MessageID.IDS_FeaturePrimaryConstructor);
+                if (isRecord)
+                {
+                    recordParameterList = this.ParseParenthesizedRecordParameterList(allowThisKeyword: false, allowDefaults: true, allowAttributes: true);
+                }
+                else
+                {
+                    parameterList = this.ParseParenthesizedParameterList(allowThisKeyword: false, allowDefaults: true, allowAttributes: true);
+                    parameterList = CheckFeatureAvailability(parameterList, MessageID.IDS_FeaturePrimaryConstructor);
+                }
+
             }
 
             this.termState = saveTerm;
@@ -1656,12 +1687,29 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     semicolon = this.EatToken();
                 }
 
+                if (isRecord)
+                {
+                    return syntaxFactory.RecordDeclaration(
+                            attributes,
+                            tokenList,
+                            classOrStructOrInterface,
+                            name,
+                            typeParameters,
+                            recordParameterList,
+                            baseList,
+                            constraints,
+                            openBrace,
+                            members,
+                            closeBrace,
+                            semicolon);
+                }
+
                 switch (classOrStructOrInterface.Kind)
                 {
                     case SyntaxKind.ClassKeyword:
                         return syntaxFactory.ClassDeclaration(
                             attributes,
-                            modifiers.ToTokenList(),
+                            tokenList,
                             classOrStructOrInterface,
                             name,
                             typeParameters,
@@ -1676,7 +1724,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     case SyntaxKind.StructKeyword:
                         return syntaxFactory.StructDeclaration(
                             attributes,
-                            modifiers.ToTokenList(),
+                            tokenList,
                             classOrStructOrInterface,
                             name,
                             typeParameters,
@@ -1691,7 +1739,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     case SyntaxKind.InterfaceKeyword:
                         return syntaxFactory.InterfaceDeclaration(
                             attributes,
-                            modifiers.ToTokenList(),
+                            tokenList,
                             classOrStructOrInterface,
                             name,
                             typeParameters,
@@ -3110,44 +3158,50 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             var paramList = this.ParseParenthesizedParameterList(allowThisKeyword: false, allowDefaults: true, allowAttributes: true);
 
             // ReportExtensionMethods(parameters, retval);
-            switch (paramList.Parameters.Count)
+
+            bool isKeywordOverloaded = opKind == SyntaxKind.IsKeyword && IsRecordsEnabled;
+
+            if (!isKeywordOverloaded)
             {
-                case 1:
-                    if (opToken.IsMissing || !SyntaxFacts.IsOverloadableUnaryOperator(opKind))
-                    {
-                        SyntaxDiagnosticInfo diagInfo = MakeError(opTokenErrorOffset, opTokenErrorWidth, ErrorCode.ERR_OvlUnaryOperatorExpected);
-                        opToken = WithAdditionalDiagnostics(opToken, diagInfo);
-                    }
+                switch (paramList.Parameters.Count)
+                {
+                    case 1:
+                        if (opToken.IsMissing || !SyntaxFacts.IsOverloadableUnaryOperator(opKind))
+                        {
+                            SyntaxDiagnosticInfo diagInfo = MakeError(opTokenErrorOffset, opTokenErrorWidth, ErrorCode.ERR_OvlUnaryOperatorExpected);
+                            opToken = WithAdditionalDiagnostics(opToken, diagInfo);
+                        }
 
-                    break;
-                case 2:
-                    if (opToken.IsMissing || !SyntaxFacts.IsOverloadableBinaryOperator(opKind))
-                    {
-                        SyntaxDiagnosticInfo diagInfo = MakeError(opTokenErrorOffset, opTokenErrorWidth, ErrorCode.ERR_OvlBinaryOperatorExpected);
-                        opToken = WithAdditionalDiagnostics(opToken, diagInfo);
-                    }
+                        break;
+                    case 2:
+                        if (opToken.IsMissing || !SyntaxFacts.IsOverloadableBinaryOperator(opKind))
+                        {
+                            SyntaxDiagnosticInfo diagInfo = MakeError(opTokenErrorOffset, opTokenErrorWidth, ErrorCode.ERR_OvlBinaryOperatorExpected);
+                            opToken = WithAdditionalDiagnostics(opToken, diagInfo);
+                        }
 
-                    break;
-                default:
-                    if (opToken.IsMissing)
-                    {
-                        SyntaxDiagnosticInfo diagInfo = MakeError(opTokenErrorOffset, opTokenErrorWidth, ErrorCode.ERR_OvlOperatorExpected);
-                        opToken = WithAdditionalDiagnostics(opToken, diagInfo);
-                    }
-                    else if (SyntaxFacts.IsOverloadableBinaryOperator(opKind))
-                    {
-                        opToken = this.AddError(opToken, ErrorCode.ERR_BadBinOpArgs, SyntaxFacts.GetText(opKind));
-                    }
-                    else if (SyntaxFacts.IsOverloadableUnaryOperator(opKind))
-                    {
-                        opToken = this.AddError(opToken, ErrorCode.ERR_BadUnOpArgs, SyntaxFacts.GetText(opKind));
-                    }
-                    else
-                    {
-                        opToken = this.AddError(opToken, ErrorCode.ERR_OvlOperatorExpected);
-                    }
+                        break;
+                    default:
+                        if (opToken.IsMissing)
+                        {
+                            SyntaxDiagnosticInfo diagInfo = MakeError(opTokenErrorOffset, opTokenErrorWidth, ErrorCode.ERR_OvlOperatorExpected);
+                            opToken = WithAdditionalDiagnostics(opToken, diagInfo);
+                        }
+                        else if (SyntaxFacts.IsOverloadableBinaryOperator(opKind))
+                        {
+                            opToken = this.AddError(opToken, ErrorCode.ERR_BadBinOpArgs, SyntaxFacts.GetText(opKind));
+                        }
+                        else if (SyntaxFacts.IsOverloadableUnaryOperator(opKind))
+                        {
+                            opToken = this.AddError(opToken, ErrorCode.ERR_BadUnOpArgs, SyntaxFacts.GetText(opKind));
+                        }
+                        else
+                        {
+                            opToken = this.AddError(opToken, ErrorCode.ERR_OvlOperatorExpected);
+                        }
 
-                    break;
+                        break;
+                }
             }
 
             BlockSyntax blockBody;
@@ -3157,7 +3211,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
             //if the operator is invalid, then switch it to plus (which will work either way) so that
             //we can finish building the tree
-            if (!(SyntaxFacts.IsOverloadableUnaryOperator(opKind) || SyntaxFacts.IsOverloadableBinaryOperator(opKind)))
+            if (!SyntaxFacts.IsAnyOverloadableOperator(opKind) &&
+                !isKeywordOverloaded)
             {
                 opToken = ConvertToMissingWithTrailingTrivia(opToken, SyntaxKind.PlusToken);
             }
@@ -3727,6 +3782,28 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             }
         }
 
+        internal RecordParameterListSyntax ParseParenthesizedRecordParameterList(bool allowThisKeyword, bool allowDefaults, bool allowAttributes)
+        {
+            // TODO: add support for incremental parsing
+
+            var parameters = this.pool.AllocateSeparated<RecordParameterSyntax>();
+
+            try
+            {
+                var openKind = SyntaxKind.OpenParenToken;
+                var closeKind = SyntaxKind.CloseParenToken;
+
+                SyntaxToken open;
+                SyntaxToken close;
+                this.ParseRecordParameterList(out open, parameters, out close, openKind, closeKind, allowThisKeyword, allowDefaults, allowAttributes);
+                return syntaxFactory.RecordParameterList(open, parameters, close);
+            }
+            finally
+            {
+                this.pool.Free(parameters);
+            }
+        }
+
         internal BracketedParameterListSyntax ParseBracketedParameterList(bool allowDefaults = true)
         {
             if (this.IsIncrementalAndFactoryContextMatches && CanReuseBracketedParameterList(this.CurrentNode as CSharp.Syntax.BracketedParameterListSyntax))
@@ -3829,7 +3906,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             {
                 if (this.CurrentToken.Kind != closeKind)
                 {
-                tryAgain:
+                    tryAgain:
                     int mustBeLastIndex = -1;
                     bool mustBeLastHadParams = false;
                     bool hasParams = false;
@@ -3903,6 +3980,101 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             }
         }
 
+        private void ParseRecordParameterList(
+            out SyntaxToken open,
+            SeparatedSyntaxListBuilder<RecordParameterSyntax> nodes,
+            out SyntaxToken close,
+            SyntaxKind openKind,
+            SyntaxKind closeKind,
+            bool allowThisKeyword,
+            bool allowDefaults,
+            bool allowAttributes)
+        {
+            open = this.EatToken(openKind);
+
+            var saveTerm = this.termState;
+            this.termState |= TerminatorState.IsEndOfParameterList;
+
+            var attributes = this.pool.Allocate<AttributeListSyntax>();
+            var modifiers = this.pool.Allocate();
+            try
+            {
+                if (this.CurrentToken.Kind != closeKind)
+                {
+                    tryAgain:
+                    int mustBeLastIndex = -1;
+                    bool mustBeLastHadParams = false;
+                    bool hasParams = false;
+                    bool hasArgList = false;
+
+                    if (this.IsPossibleParameter(allowThisKeyword) || this.CurrentToken.Kind == SyntaxKind.CommaToken)
+                    {
+                        // first parameter
+                        attributes.Clear();
+                        modifiers.Clear();
+                        var parameter = this.ParseRecordParameter(attributes, modifiers, allowThisKeyword, allowDefaults, allowAttributes);
+                        nodes.Add(parameter);
+                        hasParams = modifiers.Any(SyntaxKind.ParamsKeyword);
+                        hasArgList = parameter.Identifier.Kind == SyntaxKind.ArgListKeyword;
+                        bool mustBeLast = hasParams || hasArgList;
+                        if (mustBeLast && mustBeLastIndex == -1)
+                        {
+                            mustBeLastIndex = nodes.Count - 1;
+                            mustBeLastHadParams = hasParams;
+                        }
+
+                        // additional parameters
+                        while (true)
+                        {
+                            if (this.CurrentToken.Kind == closeKind)
+                            {
+                                break;
+                            }
+                            else if (this.CurrentToken.Kind == SyntaxKind.CommaToken || this.IsPossibleParameter(allowThisKeyword))
+                            {
+                                nodes.AddSeparator(this.EatToken(SyntaxKind.CommaToken));
+                                attributes.Clear();
+                                modifiers.Clear();
+                                parameter = this.ParseRecordParameter(attributes, modifiers, allowThisKeyword, allowDefaults, allowAttributes);
+                                nodes.Add(parameter);
+                                hasParams = modifiers.Any(SyntaxKind.ParamsKeyword);
+                                hasArgList = parameter.Identifier.Kind == SyntaxKind.ArgListKeyword;
+                                mustBeLast = hasParams || hasArgList;
+                                if (mustBeLast && mustBeLastIndex == -1)
+                                {
+                                    mustBeLastIndex = nodes.Count - 1;
+                                    mustBeLastHadParams = hasParams;
+                                }
+
+                                continue;
+                            }
+                            else if (this.SkipBadRecordParameterListTokens(ref open, nodes, SyntaxKind.CommaToken, closeKind, allowThisKeyword) == PostSkipAction.Abort)
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    else if (this.SkipBadRecordParameterListTokens(ref open, nodes, SyntaxKind.IdentifierToken, closeKind, allowThisKeyword) == PostSkipAction.Continue)
+                    {
+                        goto tryAgain;
+                    }
+
+                    if (mustBeLastIndex >= 0 && mustBeLastIndex < nodes.Count - 1)
+                    {
+                        nodes[mustBeLastIndex] = this.AddError(nodes[mustBeLastIndex], mustBeLastHadParams ? ErrorCode.ERR_ParamsLast : ErrorCode.ERR_VarargsLast);
+                    }
+                }
+
+                this.termState = saveTerm;
+                close = this.EatToken(closeKind);
+            }
+            finally
+            {
+                this.pool.Free(modifiers);
+                this.pool.Free(attributes);
+            }
+        }
+
         private bool IsEndOfParameterList()
         {
             return this.CurrentToken.Kind == SyntaxKind.CloseParenToken
@@ -3910,6 +4082,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
         }
 
         private PostSkipAction SkipBadParameterListTokens(ref SyntaxToken open, SeparatedSyntaxListBuilder<ParameterSyntax> list, SyntaxKind expected, SyntaxKind closeKind, bool allowThisKeyword)
+        {
+            return this.SkipBadSeparatedListTokensWithExpectedKind(ref open, list,
+                p => p.CurrentToken.Kind != SyntaxKind.CommaToken && !p.IsPossibleParameter(allowThisKeyword),
+                p => p.CurrentToken.Kind == closeKind || p.IsTerminator(),
+                expected);
+        }
+
+        private PostSkipAction SkipBadRecordParameterListTokens(ref SyntaxToken open, SeparatedSyntaxListBuilder<RecordParameterSyntax> list, SyntaxKind expected, SyntaxKind closeKind, bool allowThisKeyword)
         {
             return this.SkipBadSeparatedListTokensWithExpectedKind(ref open, list,
                 p => p.CurrentToken.Kind != SyntaxKind.CommaToken && !p.IsPossibleParameter(allowThisKeyword),
@@ -4068,6 +4248,90 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             return syntaxFactory.Parameter(attributes, modifiers.ToTokenList(), type, name, def);
         }
 
+        private RecordParameterSyntax ParseRecordParameter(
+            SyntaxListBuilder<AttributeListSyntax> attributes,
+            SyntaxListBuilder modifiers,
+            bool allowThisKeyword,
+            bool allowDefaults,
+            bool allowAttributes)
+        {
+            //TODO: Add support for incremental parser
+
+            this.ParseAttributeDeclarations(attributes, allowAttributes);
+            this.ParseParameterModifiers(modifiers, allowThisKeyword);
+
+            var hasArgList = this.CurrentToken.Kind == SyntaxKind.ArgListKeyword;
+
+            TypeSyntax type = null;
+            if (!hasArgList)
+            {
+                type = this.ParseType(true);
+            }
+            else if (this.IsPossibleType())
+            {
+                type = this.ParseType(true);
+                type = WithAdditionalDiagnostics(type, this.GetExpectedTokenError(SyntaxKind.CloseParenToken, SyntaxKind.IdentifierToken, 0, type.Width));
+            }
+
+            SyntaxToken name = null;
+            if (!hasArgList)
+            {
+                name = this.ParseIdentifierToken();
+
+                // When the user type "int foo[]", give them a useful error
+                if (this.CurrentToken.Kind == SyntaxKind.OpenBracketToken && this.PeekToken(1).Kind == SyntaxKind.CloseBracketToken)
+                {
+                    var open = this.EatToken();
+                    var close = this.EatToken();
+                    open = this.AddError(open, ErrorCode.ERR_BadArraySyntax);
+                    name = AddTrailingSkippedSyntax(name, SyntaxList.List(open, close));
+                }
+            }
+            else if (this.IsPossibleName())
+            {
+                // Current token is an identifier token, we expected a CloseParenToken.
+                // Get the expected token error for the missing token with correct diagnostic
+                // span and then parse the identifier token.
+
+                SyntaxDiagnosticInfo diag = this.GetExpectedTokenError(SyntaxKind.CloseParenToken, SyntaxKind.IdentifierToken);
+                name = this.ParseIdentifierToken();
+                name = WithAdditionalDiagnostics(name, diag);
+            }
+            else
+            {
+                // name is not optional on ParameterSyntax
+                name = this.EatToken(SyntaxKind.ArgListKeyword);
+            }
+
+            ColonNameSyntax colonName = null;
+            if (this.CurrentToken.Kind == SyntaxKind.ColonToken)
+            {
+                var colon = this.EatToken(SyntaxKind.ColonToken);
+                var name2 = this.ParseIdentifierName();
+                colonName = syntaxFactory.ColonName(colon, name2);
+                colonName = CheckFeatureAvailability(colonName, MessageID.IDS_FeatureNamedArgument);
+            }
+
+            EqualsValueClauseSyntax def = null;
+            if (this.CurrentToken.Kind == SyntaxKind.EqualsToken)
+            {
+                var equals = this.EatToken(SyntaxKind.EqualsToken);
+                var expr = this.ParseExpression();
+                def = syntaxFactory.EqualsValueClause(equals, expr);
+
+                if (!allowDefaults)
+                {
+                    def = this.AddError(def, equals, ErrorCode.ERR_DefaultValueNotAllowed);
+                }
+                else
+                {
+                    def = CheckFeatureAvailability(def, MessageID.IDS_FeatureOptionalParameter);
+                }
+            }
+
+            return syntaxFactory.RecordParameter(attributes, modifiers.ToTokenList(), type, name, colonName, def);
+        }
+
         private static bool IsParameterModifier(SyntaxKind kind, bool allowThisKeyword)
         {
             return GetParamFlags(kind, allowThisKeyword) != ParamFlags.None;
@@ -4108,107 +4372,107 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             var flags = ParamFlags.None;
 
             while (IsParameterModifier(this.CurrentToken.Kind, allowThisKeyword))
+            {
+                var mod = this.EatToken();
+
+                if (mod.Kind == SyntaxKind.ThisKeyword ||
+                    mod.Kind == SyntaxKind.RefKeyword ||
+                    mod.Kind == SyntaxKind.OutKeyword ||
+                    mod.Kind == SyntaxKind.ParamsKeyword)
                 {
-                    var mod = this.EatToken();
-
-                    if (mod.Kind == SyntaxKind.ThisKeyword ||
-                        mod.Kind == SyntaxKind.RefKeyword ||
-                        mod.Kind == SyntaxKind.OutKeyword ||
-                        mod.Kind == SyntaxKind.ParamsKeyword)
+                    if (mod.Kind == SyntaxKind.ThisKeyword)
                     {
-                        if (mod.Kind == SyntaxKind.ThisKeyword)
-                        {
-                            mod = CheckFeatureAvailability(mod, MessageID.IDS_FeatureExtensionMethod);
+                        mod = CheckFeatureAvailability(mod, MessageID.IDS_FeatureExtensionMethod);
 
-                            if ((flags & ParamFlags.This) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.ThisKeyword));
-                            }
-                            else if ((flags & ParamFlags.Out) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_BadOutWithThis);
-                            }
-                            else if ((flags & ParamFlags.Ref) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_BadRefWithThis);
-                            }
-                            else if ((flags & ParamFlags.Params) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_BadParamModThis);
-                            }
-                            else
-                            {
-                                flags |= ParamFlags.This;
-                            }
-                        }
-                        else if (mod.Kind == SyntaxKind.RefKeyword)
+                        if ((flags & ParamFlags.This) != 0)
                         {
-                            if ((flags & ParamFlags.Ref) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.RefKeyword));
-                            }
-                            else if ((flags & ParamFlags.This) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_BadRefWithThis);
-                            }
-                            else if ((flags & ParamFlags.Params) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_ParamsCantBeRefOut);
-                            }
-                            else if ((flags & ParamFlags.Out) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_MultiParamMod);
-                            }
-                            else
-                            {
-                                flags |= ParamFlags.Ref;
-                            }
+                            mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.ThisKeyword));
                         }
-                        else if (mod.Kind == SyntaxKind.OutKeyword)
+                        else if ((flags & ParamFlags.Out) != 0)
                         {
-                            if ((flags & ParamFlags.Out) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.OutKeyword));
-                            }
-                            else if ((flags & ParamFlags.This) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_BadOutWithThis);
-                            }
-                            else if ((flags & ParamFlags.Params) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_ParamsCantBeRefOut);
-                            }
-                            else if ((flags & ParamFlags.Ref) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_MultiParamMod);
-                            }
-                            else
-                            {
-                                flags |= ParamFlags.Out;
-                            }
+                            mod = this.AddError(mod, ErrorCode.ERR_BadOutWithThis);
                         }
-                        else if (mod.Kind == SyntaxKind.ParamsKeyword)
+                        else if ((flags & ParamFlags.Ref) != 0)
                         {
-                            if ((flags & ParamFlags.Params) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.ParamsKeyword));
-                            }
-                            else if ((flags & ParamFlags.This) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_BadParamModThis);
-                            }
-                            else if ((flags & (ParamFlags.Ref | ParamFlags.Out | ParamFlags.This)) != 0)
-                            {
-                                mod = this.AddError(mod, ErrorCode.ERR_MultiParamMod);
-                            }
-                            else
-                            {
-                                flags |= ParamFlags.Params;
-                            }
+                            mod = this.AddError(mod, ErrorCode.ERR_BadRefWithThis);
+                        }
+                        else if ((flags & ParamFlags.Params) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_BadParamModThis);
+                        }
+                        else
+                        {
+                            flags |= ParamFlags.This;
                         }
                     }
+                    else if (mod.Kind == SyntaxKind.RefKeyword)
+                    {
+                        if ((flags & ParamFlags.Ref) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.RefKeyword));
+                        }
+                        else if ((flags & ParamFlags.This) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_BadRefWithThis);
+                        }
+                        else if ((flags & ParamFlags.Params) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_ParamsCantBeRefOut);
+                        }
+                        else if ((flags & ParamFlags.Out) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_MultiParamMod);
+                        }
+                        else
+                        {
+                            flags |= ParamFlags.Ref;
+                        }
+                    }
+                    else if (mod.Kind == SyntaxKind.OutKeyword)
+                    {
+                        if ((flags & ParamFlags.Out) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.OutKeyword));
+                        }
+                        else if ((flags & ParamFlags.This) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_BadOutWithThis);
+                        }
+                        else if ((flags & ParamFlags.Params) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_ParamsCantBeRefOut);
+                        }
+                        else if ((flags & ParamFlags.Ref) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_MultiParamMod);
+                        }
+                        else
+                        {
+                            flags |= ParamFlags.Out;
+                        }
+                    }
+                    else if (mod.Kind == SyntaxKind.ParamsKeyword)
+                    {
+                        if ((flags & ParamFlags.Params) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_DupParamMod, SyntaxFacts.GetText(SyntaxKind.ParamsKeyword));
+                        }
+                        else if ((flags & ParamFlags.This) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_BadParamModThis);
+                        }
+                        else if ((flags & (ParamFlags.Ref | ParamFlags.Out | ParamFlags.This)) != 0)
+                        {
+                            mod = this.AddError(mod, ErrorCode.ERR_MultiParamMod);
+                        }
+                        else
+                        {
+                            flags |= ParamFlags.Params;
+                        }
+                    }
+                }
 
-                    modifiers.Add(mod);
+                modifiers.Add(mod);
             }
         }
 
@@ -4587,72 +4851,72 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
             if (!isExpressionContext)
             {
-            // Check for the common pattern of:
-            //
-            // C                    //<-- here
-            // Console.WriteLine();
-            //
-            // Standard greedy parsing will assume that this should be parsed as a variable
-            // declaration: "C Console".  We want to avoid that as it can confused parts of the
-            // system further up.  So, if we see certain things following the identifier, then we can
-            // assume it's not the actual name.  
-            // 
-            // So, if we're after a newline and we see a name followed by the list below, then we
-            // assume that we're accidently consuming too far into the next statement.
-            //
-            // <dot>, <arrow>, any binary operator (except =), <question>.  None of these characters
-            // are allowed in a normal variable declaration.  This also provides a more useful error
-            // message to the user.  Instead of telling them that a semicolon is expected after the
-            // following token, then instead get a useful message about an identifier being missing.
-            // The above list prevents:
-            //
-            // C                    //<-- here
-            // Console.WriteLine();
-            //
-            // C                    //<-- here 
-            // Console->WriteLine();
-            //
-            // C 
-            // A + B; // etc.
-            //
-            // C 
-            // A ? B : D;
-            var resetPoint = this.GetResetPoint();
-            try
-            {
-                var currentTokenKind = this.CurrentToken.Kind;
-                if (currentTokenKind == SyntaxKind.IdentifierToken && !parentType.IsMissing)
+                // Check for the common pattern of:
+                //
+                // C                    //<-- here
+                // Console.WriteLine();
+                //
+                // Standard greedy parsing will assume that this should be parsed as a variable
+                // declaration: "C Console".  We want to avoid that as it can confused parts of the
+                // system further up.  So, if we see certain things following the identifier, then we can
+                // assume it's not the actual name.  
+                // 
+                // So, if we're after a newline and we see a name followed by the list below, then we
+                // assume that we're accidently consuming too far into the next statement.
+                //
+                // <dot>, <arrow>, any binary operator (except =), <question>.  None of these characters
+                // are allowed in a normal variable declaration.  This also provides a more useful error
+                // message to the user.  Instead of telling them that a semicolon is expected after the
+                // following token, then instead get a useful message about an identifier being missing.
+                // The above list prevents:
+                //
+                // C                    //<-- here
+                // Console.WriteLine();
+                //
+                // C                    //<-- here 
+                // Console->WriteLine();
+                //
+                // C 
+                // A + B; // etc.
+                //
+                // C 
+                // A ? B : D;
+                var resetPoint = this.GetResetPoint();
+                try
                 {
-                    var isAfterNewLine = parentType.GetLastToken().TrailingTrivia.Any(SyntaxKind.EndOfLineTrivia);
-                    if (isAfterNewLine)
+                    var currentTokenKind = this.CurrentToken.Kind;
+                    if (currentTokenKind == SyntaxKind.IdentifierToken && !parentType.IsMissing)
                     {
-                        int offset, width;
-                        this.GetDiagnosticSpanForMissingToken(out offset, out width);
-
-                        this.EatToken();
-                        currentTokenKind = this.CurrentToken.Kind;
-
-                        var isNonEqualsBinaryToken =
-                            currentTokenKind != SyntaxKind.EqualsToken &&
-                            SyntaxFacts.IsBinaryExpressionOperatorToken(currentTokenKind);
-
-                        if (currentTokenKind == SyntaxKind.DotToken ||
-                            currentTokenKind == SyntaxKind.MinusGreaterThanToken ||
-                            isNonEqualsBinaryToken)
+                        var isAfterNewLine = parentType.GetLastToken().TrailingTrivia.Any(SyntaxKind.EndOfLineTrivia);
+                        if (isAfterNewLine)
                         {
-                            var missingIdentifier = CreateMissingIdentifierToken();
-                            missingIdentifier = this.AddError(missingIdentifier, offset, width, ErrorCode.ERR_IdentifierExpected);
+                            int offset, width;
+                            this.GetDiagnosticSpanForMissingToken(out offset, out width);
 
-                            return syntaxFactory.VariableDeclarator(missingIdentifier, null, null);
+                            this.EatToken();
+                            currentTokenKind = this.CurrentToken.Kind;
+
+                            var isNonEqualsBinaryToken =
+                                currentTokenKind != SyntaxKind.EqualsToken &&
+                                SyntaxFacts.IsBinaryExpressionOperatorToken(currentTokenKind);
+
+                            if (currentTokenKind == SyntaxKind.DotToken ||
+                                currentTokenKind == SyntaxKind.MinusGreaterThanToken ||
+                                isNonEqualsBinaryToken)
+                            {
+                                var missingIdentifier = CreateMissingIdentifierToken();
+                                missingIdentifier = this.AddError(missingIdentifier, offset, width, ErrorCode.ERR_IdentifierExpected);
+
+                                return syntaxFactory.VariableDeclarator(missingIdentifier, null, null);
+                            }
                         }
                     }
                 }
-            }
-            finally
-            {
-                this.Reset(ref resetPoint);
-                this.Release(ref resetPoint);
-            }
+                finally
+                {
+                    this.Reset(ref resetPoint);
+                    this.Release(ref resetPoint);
+                }
             }
 
             // NOTE: Diverges from Dev10.
@@ -4943,7 +5207,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
         {
             if (this.CurrentToken.Kind != SyntaxKind.CloseBraceToken)
             {
-            tryAgain:
+                tryAgain:
 
                 if (this.IsPossibleEnumMemberDeclaration() || this.CurrentToken.Kind == SyntaxKind.CommaToken || this.CurrentToken.Kind == SyntaxKind.SemicolonToken)
                 {
@@ -6315,10 +6579,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             // possible that it was only not legal because we were not in an async context.
 
             Debug.Assert(!IsInAsync);
-            
+
             // Let's see if we're in case (4). Pretend that we're in an async method and see if parsing
             // a non-declaration statement would have succeeded.
-            
+
             this.Reset(ref resetPointBeforeStatement);
             IsInAsync = true;
             result = ParseStatementNoDeclaration(allowAnyExpression: false);
@@ -7374,7 +7638,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
         {
             if (this.CurrentToken.Kind != SyntaxKind.CloseParenToken && this.CurrentToken.Kind != SyntaxKind.SemicolonToken)
             {
-            tryAgain:
+                tryAgain:
                 if (this.IsPossibleExpression() || this.CurrentToken.Kind == SyntaxKind.CommaToken)
                 {
                     // first argument
@@ -7434,7 +7698,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             }
             else
             {
-                 @foreach = this.EatToken(SyntaxKind.ForEachKeyword);
+                @foreach = this.EatToken(SyntaxKind.ForEachKeyword);
             }
 
             var openParen = this.EatToken(SyntaxKind.OpenParenToken);
@@ -7653,13 +7917,37 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                         {
                             expression = this.CreateMissingIdentifierName();
                             expression = this.AddError(expression, ErrorCode.ERR_ConstantExpected);
+                            colon = this.EatToken(SyntaxKind.ColonToken);
+                            label = syntaxFactory.CaseSwitchLabel(specifier, expression, colon);
+                        }
+                        else if (IsRecordsEnabled)
+                        {
+                            var node = ParseExpressionOrPattern();
+                            if (node is PatternSyntax)
+                            {
+                                SyntaxToken with = null; ;
+                                ExpressionSyntax condition = null;
+                                if (this.CurrentToken.ContextualKind == SyntaxKind.WhereKeyword)
+                                {
+                                    with = this.EatContextualToken(SyntaxKind.WhereKeyword);
+                                    condition = ParseExpression();
+                                }
+                                colon = this.EatToken(SyntaxKind.ColonToken);
+                                label = syntaxFactory.CaseMatchLabel(specifier, (PatternSyntax)node, with, condition, colon);
+                            }
+                            else
+                            {
+                                colon = this.EatToken(SyntaxKind.ColonToken);
+                                Debug.Assert(node is ExpressionSyntax);
+                                label = syntaxFactory.CaseSwitchLabel(specifier, (ExpressionSyntax)node, colon);
+                            }
                         }
                         else
                         {
                             expression = this.ParseExpression();
+                            colon = this.EatToken(SyntaxKind.ColonToken);
+                            label = syntaxFactory.CaseSwitchLabel(specifier, expression, colon);
                         }
-                        colon = this.EatToken(SyntaxKind.ColonToken);
-                        label = syntaxFactory.CaseSwitchLabel(specifier, expression, colon);
                     }
                     else
                     {
@@ -8344,10 +8632,31 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     opToken = SyntaxFactory.Token(opToken.GetLeadingTrivia(), kind, opToken2.GetTrailingTrivia());
                 }
 
-                if (opKind == SyntaxKind.IsExpression || opKind == SyntaxKind.AsExpression)
+                if (opKind == SyntaxKind.AsExpression)
                 {
                     leftOperand = syntaxFactory.BinaryExpression(opKind, leftOperand, opToken,
                         this.ParseTypeCore(parentIsParameter: false, isOrAs: true, expectSizes: false, isArrayCreation: false));
+                }
+                else if (opKind == SyntaxKind.IsExpression)
+                {
+                    if (IsRecordsEnabled)
+                    {
+                        var node = this.ParseTypeOrPattern();
+                        if (node is PatternSyntax)
+                        {
+                            leftOperand = syntaxFactory.MatchExpression(leftOperand, opToken, (PatternSyntax)node);
+                        }
+                        else
+                        {
+                            Debug.Assert(node is TypeSyntax);
+                            leftOperand = syntaxFactory.BinaryExpression(opKind, leftOperand, opToken, (TypeSyntax)node);
+                        }
+                    }
+                    else
+                    {
+                        leftOperand = syntaxFactory.BinaryExpression(opKind, leftOperand, opToken,
+                            this.ParseTypeCore(parentIsParameter: false, isOrAs: true, expectSizes: false, isArrayCreation: false));
+                    }
                 }
                 else
                 {
@@ -8379,6 +8688,358 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             }
 
             return leftOperand;
+        }
+
+        // This method is used when we always want a pattern as a result.
+        // For instance, it is used in parsing recursivepattern and propertypattern.
+        // SubPatterns in these (recursivepattern, propertypattern) must be a type of Pattern.
+        private PatternSyntax ParsePattern()
+        {
+            var node = this.ParseExpressionOrPattern();
+            if (node is PatternSyntax)
+            {
+                return (PatternSyntax)node;
+            }
+            Debug.Assert(node is ExpressionSyntax);
+            return syntaxFactory.ConstantPattern((ExpressionSyntax)node);
+        }
+
+        // Priority is the TypeSyntax. It might return TypeSyntax which might be a constant pattern such as enum 'Days.Sunday' 
+        // We handle such cases in the binder of is operator.
+        // It is used for parsing patterns in the is operators.
+        private CSharpSyntaxNode ParseTypeOrPattern()
+        {
+            var tk = this.CurrentToken.Kind;
+            CSharpSyntaxNode node = null;
+
+            if (tk == SyntaxKind.AsteriskToken)
+            {
+                var asteriskToken = this.EatToken();
+                return syntaxFactory.WildCardPattern(asteriskToken);
+            }
+
+            // If it is a nameof, skip the 'if' and parse as a constant pattern. 
+            if (SyntaxFacts.IsPredefinedType(tk) ||
+                (tk == SyntaxKind.IdentifierToken && this.CurrentToken.ContextualKind != SyntaxKind.NameOfKeyword))
+            {
+                var resetPoint = this.GetResetPoint();
+                TypeSyntax type = this.ParseTypeCore(parentIsParameter: false, isOrAs: true, expectSizes: false, isArrayCreation: false);
+
+                tk = this.CurrentToken.Kind;
+                if (!type.IsMissing)
+                {
+                    // X.Y.Z ( ... ) : RecursivePattern
+                    if (tk == SyntaxKind.OpenParenToken)
+                    {
+                        node = syntaxFactory.RecursivePattern(type, this.ParseSubRecursivePatternList());
+                    }
+                    // X.Y.Z { ... } : PropertyPattern
+                    else if (tk == SyntaxKind.OpenBraceToken)
+                    {
+                        node = syntaxFactory.PropertyPattern(type, this.ParseSubPropertyPatternList());
+                    }
+                    // X.Y.Z id
+                    else if (this.IsTrueIdentifier())
+                    {
+                        var identifier = ParseIdentifierToken();
+                        node = syntaxFactory.DeclarationPattern(type, identifier);
+                    }
+                }
+                if (node == null)
+                {
+                    // We allow these expressions: "operand is a+b" (if both a and b are constant)
+                    if (tk == SyntaxKind.PlusToken || tk == SyntaxKind.MinusToken)
+                    {
+                        this.Reset(ref resetPoint);
+                        node = syntaxFactory.ConstantPattern(this.ParseExpression());
+                    }
+                    // it is a typical is operator! 
+                    else
+                    {
+                        node = type;
+                    }
+                }
+                this.Release(ref resetPoint);
+            }
+            else
+            {
+                // it still might be a pattern such as (operand is 3) or (operand is -3)
+                node = syntaxFactory.ConstantPattern(this.ParseExpression());
+            }
+            return node;
+        }
+
+        // Priority is the ExpressionSyntax. It might return ExpressionSyntax which might be a constant pattern such as 'case 3:' 
+        // All constant expressions are converted to the constant pattern in the switch binder if it is a match statement.
+        // It is used for parsing patterns in the switch cases. It never returns constant pattern!
+        private CSharpSyntaxNode ParseExpressionOrPattern()
+        {
+            var tk = this.CurrentToken.Kind;
+            CSharpSyntaxNode node = null;
+
+            if (tk == SyntaxKind.AsteriskToken)
+            {
+                var asteriskToken = this.EatToken();
+                return syntaxFactory.WildCardPattern(asteriskToken);
+            }
+
+            // If it is a nameof, skip the 'if' and parse as an expression. 
+            if ((SyntaxFacts.IsPredefinedType(tk) || tk == SyntaxKind.IdentifierToken) &&
+                  this.CurrentToken.ContextualKind != SyntaxKind.NameOfKeyword)
+            {
+                var resetPoint = this.GetResetPoint();
+                TypeSyntax type = this.ParseTypeCore(parentIsParameter: false, isOrAs: true, expectSizes: false, isArrayCreation: false);
+
+
+                tk = this.CurrentToken.Kind;
+                if (!type.IsMissing)
+                {
+                    // X.Y.Z ( ... ) : RecursivePattern
+                    if (tk == SyntaxKind.OpenParenToken)
+                    {
+                        node = syntaxFactory.RecursivePattern(type, this.ParseSubRecursivePatternList());
+                    }
+                    // X.Y.Z { ... } : PropertyPattern
+                    else if (tk == SyntaxKind.OpenBraceToken)
+                    {
+                        node = syntaxFactory.PropertyPattern(type, this.ParseSubPropertyPatternList());
+                    }
+                    // X.Y.Z id
+                    else if (this.IsTrueIdentifier())
+                    {
+                        var identifier = ParseIdentifierToken();
+                        node = syntaxFactory.DeclarationPattern(type, identifier);
+                    }
+                }
+                if (node == null)
+                {
+                    // it is an expression for typical switch case. 
+                    // This can be transformed to the constant pattern in the SwitchBinder if there is a CaseMatchLabel in the sections. 
+                    this.Reset(ref resetPoint);
+                    node = this.ParseExpression();
+                }
+                this.Release(ref resetPoint);
+            }
+            else
+            {
+                node = this.ParseExpression();
+            }
+            return node;
+        }
+
+        private SubPropertyPatternListSyntax ParseSubPropertyPatternList()
+        {
+            var openBrace = this.EatToken(SyntaxKind.OpenBraceToken);
+
+            var subPatterns = this.pool.AllocateSeparated<SubPropertyPatternSyntax>();
+            try
+            {
+                this.ParseSubPropertyPatternList(ref openBrace, subPatterns);
+
+                var closeBrace = this.EatToken(SyntaxKind.CloseBraceToken);
+                return syntaxFactory.SubPropertyPatternList(
+                    openBrace,
+                    subPatterns,
+                    closeBrace);
+            }
+            finally
+            {
+                this.pool.Free(subPatterns);
+            }
+        }
+
+        private void ParseSubPropertyPatternList(ref SyntaxToken startToken, SeparatedSyntaxListBuilder<SubPropertyPatternSyntax> list)
+        {
+            if (this.CurrentToken.Kind != SyntaxKind.CloseBraceToken)
+            {
+                tryAgain:
+                if (this.IsPossibleSubPropertyPattern() || this.CurrentToken.Kind == SyntaxKind.CommaToken)
+                {
+                    // first argument
+                    list.Add(this.ParseSubPropertyPattern());
+
+                    // additional arguments
+                    while (true)
+                    {
+                        if (this.CurrentToken.Kind == SyntaxKind.CloseBraceToken)
+                        {
+                            break;
+                        }
+                        else if (this.CurrentToken.Kind == SyntaxKind.CommaToken || this.IsPossibleSubPropertyPattern())
+                        {
+                            list.AddSeparator(this.EatToken(SyntaxKind.CommaToken));
+
+                            // check for exit case after legal trailing comma
+                            if (this.CurrentToken.Kind == SyntaxKind.CloseBraceToken)
+                            {
+                                break;
+                            }
+
+                            list.Add(this.ParseSubPropertyPattern());
+                            continue;
+                        }
+                        else if (this.SkipBadSubPatternListTokens(ref startToken, list, SyntaxKind.CommaToken, SyntaxKind.CloseBraceToken) == PostSkipAction.Abort)
+                        {
+                            break;
+                        }
+                    }
+                }
+                else if (this.SkipBadSubPatternListTokens(ref startToken, list, SyntaxKind.IdentifierToken, SyntaxKind.CloseBraceToken) == PostSkipAction.Continue)
+                {
+                    goto tryAgain;
+                }
+            }
+        }
+
+        private SubPropertyPatternSyntax ParseSubPropertyPattern()
+        {
+            var name = this.ParseIdentifierName();
+            var operandToken = this.EatToken(SyntaxKind.IsKeyword);
+
+            PatternSyntax pattern = this.CurrentToken.Kind == SyntaxKind.CommaToken ?
+                                                        this.AddError(syntaxFactory.ConstantPattern(this.CreateMissingIdentifierName()), ErrorCode.ERR_MissingArgument) :
+                                                        ParsePattern();
+
+            return syntaxFactory.SubPropertyPattern(name, operandToken, pattern);
+        }
+
+        private bool IsPossibleSubPropertyPattern()
+        {
+            return (this.CurrentToken.Kind == SyntaxKind.IdentifierToken) && (this.PeekToken(1).Kind == SyntaxKind.IsKeyword);
+        }
+
+        private SubRecursivePatternListSyntax ParseSubRecursivePatternList()
+        {
+            if (this.IsIncrementalAndFactoryContextMatches && this.CurrentNodeKind == SyntaxKind.SubRecursivePatternList)
+            {
+                return (SubRecursivePatternListSyntax)this.EatNode();
+            }
+
+            SyntaxToken openToken, closeToken;
+            SeparatedSyntaxList<SubRecursivePatternSyntax> subPatterns;
+            ParseSubRecursivePatternList(out openToken, out subPatterns, out closeToken, SyntaxKind.OpenParenToken, SyntaxKind.CloseParenToken);
+
+            return syntaxFactory.SubRecursivePatternList(openToken, subPatterns, closeToken);
+        }
+
+        private void ParseSubRecursivePatternList(
+            out SyntaxToken openToken,
+            out SeparatedSyntaxList<SubRecursivePatternSyntax> subPatterns,
+            out SyntaxToken closeToken,
+            SyntaxKind openKind,
+            SyntaxKind closeKind)
+        {
+            var open = this.EatToken(openKind);
+            var saveTerm = this.termState;
+            this.termState |= TerminatorState.IsEndOfArgumentList;
+
+            SeparatedSyntaxListBuilder<SubRecursivePatternSyntax> list = default(SeparatedSyntaxListBuilder<SubRecursivePatternSyntax>);
+            try
+            {
+                if (this.CurrentToken.Kind != closeKind && this.CurrentToken.Kind != SyntaxKind.SemicolonToken)
+                {
+                    tryAgain:
+                    if (list.IsNull)
+                    {
+                        list = this.pool.AllocateSeparated<SubRecursivePatternSyntax>();
+                    }
+
+                    if (this.IsPossibleArgumentExpression() || this.CurrentToken.Kind == SyntaxKind.CommaToken)
+                    {
+                        // first argument
+                        list.Add(this.ParseSubRecursivePattern());
+
+                        // additional arguments
+                        while (true)
+                        {
+                            if (this.CurrentToken.Kind == closeKind || this.CurrentToken.Kind == SyntaxKind.SemicolonToken)
+                            {
+                                break;
+                            }
+                            else if (this.CurrentToken.Kind == SyntaxKind.CommaToken || this.IsPossibleArgumentExpression())
+                            {
+                                list.AddSeparator(this.EatToken(SyntaxKind.CommaToken));
+                                list.Add(this.ParseSubRecursivePattern());
+                                continue;
+                            }
+                            else if (this.SkipBadSubPatternListTokens(ref open, list, SyntaxKind.CommaToken, closeKind) == PostSkipAction.Abort)
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    else if (this.SkipBadSubPatternListTokens(ref open, list, SyntaxKind.IdentifierToken, closeKind) == PostSkipAction.Continue)
+                    {
+                        goto tryAgain;
+                    }
+                }
+
+                this.termState = saveTerm;
+
+                openToken = open;
+                closeToken = this.EatToken(closeKind);
+                subPatterns = list.ToList();
+            }
+            finally
+            {
+                if (!list.IsNull)
+                {
+                    this.pool.Free(list);
+                }
+            }
+        }
+
+        private SubRecursivePatternSyntax ParseSubRecursivePattern()
+        {
+            NameColonSyntax nameColon = null;
+            if (this.CurrentToken.Kind == SyntaxKind.IdentifierToken && this.PeekToken(1).Kind == SyntaxKind.ColonToken)
+            {
+                var name = this.ParseIdentifierName();
+                var colon = this.EatToken(SyntaxKind.ColonToken);
+                nameColon = syntaxFactory.NameColon(name, colon);
+            }
+
+            PatternSyntax pattern = this.CurrentToken.Kind == SyntaxKind.CommaToken ?
+                                            this.AddError(syntaxFactory.ConstantPattern(this.CreateMissingIdentifierName()), ErrorCode.ERR_MissingArgument) :
+                                            ParsePattern();
+
+            return syntaxFactory.SubRecursivePattern(nameColon, pattern);
+        }
+
+        private PostSkipAction SkipBadSubPatternListTokens<TNode>(ref SyntaxToken open, SeparatedSyntaxListBuilder<TNode> list, SyntaxKind expected, SyntaxKind closeKind) where TNode : CSharpSyntaxNode
+        {
+            return this.SkipBadSeparatedListTokensWithExpectedKind(ref open, list,
+                p => p.CurrentToken.Kind != SyntaxKind.CommaToken && !p.IsPossiblePattern(),
+                p => p.CurrentToken.Kind == closeKind || p.CurrentToken.Kind == SyntaxKind.SemicolonToken || p.IsTerminator(),
+                expected);
+        }
+
+        // It should not be accurate. This method is just used in the SkipBadSubPatternListTokens.
+        // It is very general way of checking whether there is a possible pattern.
+        private bool IsPossiblePattern()
+        {
+            var tk = this.CurrentToken.Kind;
+            switch (tk)
+            {
+                case SyntaxKind.AsteriskToken:
+                case SyntaxKind.StringLiteralToken:
+                case SyntaxKind.CharacterLiteralToken:
+                case SyntaxKind.NumericLiteralToken:
+                case SyntaxKind.NullKeyword:
+                case SyntaxKind.TrueKeyword:
+                case SyntaxKind.FalseKeyword:
+                case SyntaxKind.ArgListKeyword:
+                    return true;
+                case SyntaxKind.IdentifierToken:
+                    var next = this.PeekToken(1).Kind;
+                    if (next == SyntaxKind.DotToken || next == SyntaxKind.OpenBraceToken ||
+                       next == SyntaxKind.OpenParenToken)
+                    {
+                        return true;
+                    }
+                    break;
+            }
+            return IsPossibleDeclarationExpression(false);
         }
 
         private ExpressionSyntax ParseTerm(uint precedence, bool contextRequiresVariable)

@@ -97,7 +97,29 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 foreach (var info in infos)
                 {
-                    BoundFieldInitializer boundInitializer = BindFieldInitializer(info.Binder, info.Initializer.Field, info.EqualsValue, diagnostics);
+                    BoundFieldInitializer boundInitializer;
+                    if (info.EqualsValue.Kind == SyntaxKind.EqualsValueClause)
+                    {
+                        var equalsValueSyntax = (EqualsValueClauseSyntax)info.EqualsValue;
+                        boundInitializer = BindFieldInitializer(info.Binder, info.Initializer.Field, equalsValueSyntax, diagnostics);
+                    }
+                    else
+                    {
+                        Debug.Assert(info.EqualsValue.Kind == SyntaxKind.RecordParameter);
+                        // This is automatically generating backing field and its initializer for record parameters.
+
+                        var recordParameter = (RecordParameterSyntax)info.EqualsValue;
+                        var recordParameterName = recordParameter.Identifier.ValueText;
+                        var lookupResult = LookupResult.GetInstance();
+                        LookupOptions options = LookupOptions.AllMethodsOnArityZero;
+                        HashSet<DiagnosticInfo> useSiteDiagnostics = null;
+                        info.Binder.LookupSymbolsWithFallback(lookupResult, recordParameterName, arity: 0, useSiteDiagnostics: ref useSiteDiagnostics, options: options);
+                        var parameterSymbol = lookupResult.Symbols[0];
+                        Debug.Assert(parameterSymbol.Kind == SymbolKind.Parameter);
+                        boundInitializer = new BoundFieldInitializer(recordParameter, info.Initializer.Field,
+                                                                     new BoundParameter(recordParameter, (ParameterSymbol)parameterSymbol));
+                        lookupResult.Free();
+                    }
                     initializersBuilder.Add(boundInitializer);
                 }
 
@@ -136,7 +158,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 {
                     //Can't assert that this is a regular C# compilation, because we could be in a nested type of a script class.
                     SyntaxReference syntaxRef = initializer.Syntax;
-                    var initializerNode = (EqualsValueClauseSyntax)syntaxRef.GetSyntax();
+                    var initializerNode = (CSharpSyntaxNode)syntaxRef.GetSyntax();
 
                     if (binderFactory == null)
                     {
@@ -145,6 +167,8 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                     Binder parentBinder = binderFactory.GetBinder(initializerNode);
                     Debug.Assert(parentBinder.ContainingMemberOrLambda == fieldSymbol.ContainingType || //should be the binder for the type
+                            parentBinder.ContainingMemberOrLambda == fieldSymbol.ContainingNamespace || //for the recordparametersyntax's binder
+                            parentBinder.ContainingMemberOrLambda == fieldSymbol.ContainingType.ContainingType || //for the recordparametersyntax's binder
                             fieldSymbol.ContainingType.IsImplicitClass); //however, we also allow fields in namespaces to help support script scenarios
 
                     if (generateDebugInfo && firstDebugImports == null)
@@ -196,10 +220,11 @@ namespace Microsoft.CodeAnalysis.CSharp
             foreach (var info in infos)
             {
                 // Constant initializers do not contribute to the initialization scope.
-                if (!info.Initializer.Field.IsConst)
+                if (!info.Initializer.Field.IsConst && info.EqualsValue.Kind == SyntaxKind.EqualsValueClause)
                 {
-                    var walker = new LocalScopeBinder.BuildLocalsFromDeclarationsWalker(info.Binder, info.EqualsValue.Value);
-                    walker.Visit(info.EqualsValue.Value);
+                    var equalsValueExpression = ((EqualsValueClauseSyntax)info.EqualsValue).Value;
+                    var walker = new LocalScopeBinder.BuildLocalsFromDeclarationsWalker(info.Binder, equalsValueExpression);
+                    walker.Visit(equalsValueExpression);
 
                     if (walker.Locals != null)
                     {

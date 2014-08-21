@@ -298,6 +298,11 @@ namespace Microsoft.CodeAnalysis.CSharp
             return VisitTypeDeclaration(node, DeclarationKind.Interface);
         }
 
+        public override SingleNamespaceOrTypeDeclaration VisitRecordDeclaration(RecordDeclarationSyntax node)
+        {
+            return VisitTypeDeclaration(node, DeclarationKind.Record);
+        }
+
         private SingleNamespaceOrTypeDeclaration VisitTypeDeclaration(TypeDeclarationSyntax node, DeclarationKind kind)
         {
             SingleTypeDeclaration.TypeDeclarationFlags declFlags = node.AttributeLists.Any() ?
@@ -309,13 +314,15 @@ namespace Microsoft.CodeAnalysis.CSharp
                 declFlags |= SingleTypeDeclaration.TypeDeclarationFlags.HasBaseDeclarations;
             }
 
-            var memberNames = GetNonTypeMemberNames(((Syntax.InternalSyntax.TypeDeclarationSyntax)(node.Green)).Members,
-                                                    node.Kind == SyntaxKind.ClassDeclaration ?
+            bool hasPrimaryConstructor = node.Kind == SyntaxKind.ClassDeclaration ?
                                                         ((ClassDeclarationSyntax)node).ParameterList != null :
                                                         node.Kind == SyntaxKind.StructDeclaration ?
                                                             ((StructDeclarationSyntax)node).ParameterList != null :
-                                                            false,
-                                                    ref declFlags);
+                                                            node.Kind == SyntaxKind.RecordDeclaration ?
+                                                                ((RecordDeclarationSyntax)node).ParameterList != null :
+                                                                false;
+
+            var memberNames = GetNonTypeMemberNames(((Syntax.InternalSyntax.TypeDeclarationSyntax)(node.Green)).Members, hasPrimaryConstructor, ref declFlags);
 
             return new SingleTypeDeclaration(
                 kind: kind,
@@ -516,6 +523,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return (((Syntax.InternalSyntax.CompilationUnitSyntax)member).AttributeLists).Any();
 
                 case SyntaxKind.ClassDeclaration:
+                case SyntaxKind.RecordDeclaration:
                 case SyntaxKind.StructDeclaration:
                 case SyntaxKind.InterfaceDeclaration:
                 case SyntaxKind.EnumDeclaration:

@@ -94,6 +94,7 @@
     <Compile Include="Binder\Binder_Lookup.cs" />
     <Compile Include="Binder\Binder_NameConflicts.cs" />
     <Compile Include="Binder\Binder_Operators.cs" />
+    <Compile Include="Binder\Binder_Patterns.cs" />
     <Compile Include="Binder\Binder_Query.cs" />
     <Compile Include="Binder\Binder_QueryErrors.cs" />
     <Compile Include="Binder\Binder_Statements.cs" />
@@ -418,11 +419,13 @@
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_HostObjectMemberReference.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_IfStatement.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_IndexerAccess.cs" />
+    <Compile Include="Lowering\LocalRewriter\LocalRewriter_MatchExpression.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_IsOperator.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_LabeledStatement.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_Literal.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_LocalDeclaration.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_LockStatement.cs" />
+    <Compile Include="Lowering\LocalRewriter\LocalRewriter_MatchStatement.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_MultipleLocalDeclarations.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_NullCoalescingOperator.cs" />
     <Compile Include="Lowering\LocalRewriter\LocalRewriter_ObjectCreationExpression.cs" />
@@ -673,6 +676,10 @@
     <Compile Include="Symbols\SymbolVisitor.cs" />
     <Compile Include="Symbols\SymbolVisitor`1.cs" />
     <Compile Include="Symbols\SymbolVisitor`2.cs" />
+    <Compile Include="Symbols\Synthesized\Records\SynthesizedEqualsMethod.cs" />
+    <Compile Include="Symbols\Synthesized\Records\SynthesizedGetHashCodeMethod.cs" />
+    <Compile Include="Symbols\Synthesized\Records\SynthesizedMethodBaseForRecords.cs" />
+    <Compile Include="Symbols\Synthesized\Records\SynthesizedPropertySymbol.cs" />
     <Compile Include="Symbols\Synthesized\GeneratedLabelSymbol.cs" />
     <Compile Include="Symbols\Synthesized\GeneratedNameKind.cs" />
     <Compile Include="Symbols\Synthesized\GeneratedNames.cs" />
@@ -680,6 +687,8 @@
     <Compile Include="Symbols\Synthesized\SynthesizedBackingFieldSymbol.cs" />
     <Compile Include="Symbols\Synthesized\SynthesizedContainer.cs" />
     <Compile Include="Symbols\Synthesized\SynthesizedDelegateSymbol.cs" />
+    <Compile Include="Symbols\Synthesized\Records\SynthesizedIsOperator.cs" />
+    <Compile Include="Symbols\Synthesized\Records\SynthesizedConstantHelperMethod.cs" />
     <Compile Include="Symbols\Synthesized\SynthesizedEntryPointSymbol.cs" />
     <Compile Include="Symbols\Synthesized\SynthesizedEnumValueFieldSymbol.cs" />
     <Compile Include="Symbols\Synthesized\SynthesizedExplicitImplementationForwardingMethod.cs" />
@@ -776,6 +785,8 @@
     <Compile Include="Syntax\ParameterListSyntax.cs" />
     <Compile Include="Syntax\ParameterSyntax.cs" />
     <Compile Include="Syntax\QualifiedNameSyntax.cs" />
+    <Compile Include="Syntax\RecordParameterListSyntax.cs" />
+    <Compile Include="Syntax\RecordParameterSyntax.cs" />
     <Compile Include="Syntax\SeparatedSyntaxListBuilder.cs" />
     <Compile Include="Syntax\SimpleNameSyntax.cs" />
     <Compile Include="Syntax\SimpleSyntaxReference.cs" />

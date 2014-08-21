@@ -441,7 +441,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                     case SymbolKind.Property:
                         {
-                            SourcePropertySymbol sourceProperty = member as SourcePropertySymbol;
+                            PropertySymbol sourceProperty = member as PropertySymbol;
                             if ((object)sourceProperty != null && sourceProperty.IsSealed && compilationState.Emitting)
                             {
                                 CompileSynthesizedSealedAccessors(sourceProperty, compilationState);
@@ -644,9 +644,23 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private void CompileSynthesizedSealedAccessors(SourcePropertySymbol sourceProperty, TypeCompilationState compilationState)
+        private void CompileSynthesizedSealedAccessors(PropertySymbol property, TypeCompilationState compilationState)
         {
-            SynthesizedSealedPropertyAccessor synthesizedAccessor = sourceProperty.SynthesizedSealedAccessorOpt;
+            MethodSymbol synthesizedAccessor = null;
+            var sourceProperty = property as SourcePropertySymbol;
+
+            if ((object)sourceProperty != null)
+            {
+                synthesizedAccessor = sourceProperty.SynthesizedSealedAccessorOpt;
+            }
+            else
+            {
+                var synthesizedProperty = property as SynthesizedPropertySymbol;
+                if ((object)synthesizedProperty != null)
+                {
+                    synthesizedAccessor = synthesizedProperty.GetMethod;
+                }
+            }
 
             // we are not generating any observable diagnostics here so it is ok to shortcircuit on global errors.
             if ((object)synthesizedAccessor != null && !globalHasErrors)
@@ -657,7 +671,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 Debug.Assert(!discardedDiagnostics.HasAnyErrors());
                 discardedDiagnostics.Free();
 
-                moduleBeingBuiltOpt.AddSynthesizedDefinition(sourceProperty.ContainingType, synthesizedAccessor);
+                moduleBeingBuiltOpt.AddSynthesizedDefinition(property.ContainingType, synthesizedAccessor);
             }
         }
 
@@ -815,7 +829,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     {
                         // See if there are any locals in intialization scope
                         Debug.Assert((object)methodSymbol == sourceMethod);
-                        Debug.Assert(sourceMethod.SyntaxNode.Kind == SyntaxKind.ParameterList);
+                        Debug.Assert(sourceMethod.SyntaxNode.Kind == SyntaxKind.ParameterList || sourceMethod.SyntaxNode.Kind == SyntaxKind.RecordParameterList);
 
                         var correspondingTypeDeclaration = (TypeDeclarationSyntax)sourceMethod.SyntaxNode.Parent;
 
@@ -1498,11 +1512,11 @@ namespace Microsoft.CodeAnalysis.CSharp
                 }
                 else
                 {
-                    // Primary constuctor case.
-                    Debug.Assert(syntax.Kind == SyntaxKind.ParameterList);
-                    if (syntax.Parent.Kind == SyntaxKind.ClassDeclaration)
+                    // Primary constructor case.
+                    Debug.Assert(syntax.Kind == SyntaxKind.ParameterList || syntax.Kind == SyntaxKind.RecordParameterList);
+                    if (syntax.Parent.Kind == SyntaxKind.ClassDeclaration || syntax.Parent.Kind == SyntaxKind.RecordDeclaration)
                     {
-                        var classDecl = (ClassDeclarationSyntax)syntax.Parent;
+                        var classDecl = (TypeDeclarationSyntax)syntax.Parent;
 
                         if (classDecl.BaseList != null && classDecl.BaseList.Types.Count > 0)
                         {
@@ -1601,6 +1615,11 @@ namespace Microsoft.CodeAnalysis.CSharp
                 {
                     bodyToken = ((ClassDeclarationSyntax)containerNode).OpenBraceToken;
                 }
+                else if (containerNode.Kind == SyntaxKind.RecordDeclaration)
+                {
+                    // TODO: support ";" as a body by introducing a new nonterminal for the type declaration body.
+                    bodyToken = ((RecordDeclarationSyntax)containerNode).OpenBraceToken;
+                }
                 else if (containerNode.Kind == SyntaxKind.StructDeclaration)
                 {
                     bodyToken = ((StructDeclarationSyntax)containerNode).OpenBraceToken;
@@ -1615,7 +1634,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     Debug.Assert(false, "How did we get an implicit constructor added to something that is neither a class nor a struct?");
                     bodyToken = containerNode.GetFirstToken();
                 }
-
+                
                 outerBinder = compilation.GetBinderFactory(containerNode.SyntaxTree).GetBinder(containerNode, bodyToken.Position);
             }
             else if (initializerArgumentListOpt == null)
@@ -1626,7 +1645,9 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 outerBinder = compilation.GetBinderFactory(sourceConstructor.SyntaxTree).GetBinder(syntax.Kind == SyntaxKind.ParameterList ?
                                                                                                         syntax :
-                                                                                                        ((ConstructorDeclarationSyntax)syntax).ParameterList);
+                                                                                                        syntax.Kind == SyntaxKind.RecordParameterList ?
+                                                                                                            syntax :
+                                                                                                            ((ConstructorDeclarationSyntax)syntax).ParameterList);
             }
             else
             {

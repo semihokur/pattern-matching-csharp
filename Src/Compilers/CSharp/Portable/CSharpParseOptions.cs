@@ -190,4 +190,18 @@ namespace Microsoft.CodeAnalysis.CSharp
                 Hash.Combine((int)this.LanguageVersion, 0));
         }
     }
+
+    internal static partial class CSharpParseOptionsExtensions
+    {
+        public static bool IsRecordsEnabled(this CSharpParseOptions options)
+        {
+            LanguageVersion availableVersion = options.LanguageVersion;
+            LanguageVersion requiredVersion = MessageID.IDS_FeatureRecords.RequiredVersion();
+            if (availableVersion >= requiredVersion)
+            {
+                return options.PreprocessorSymbolNames.Contains(name => name == "RECORDS");
+            }
+            return false;
+        }
+    }
 }

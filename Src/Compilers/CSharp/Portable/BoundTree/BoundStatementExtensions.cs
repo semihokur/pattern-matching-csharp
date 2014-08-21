@@ -11,7 +11,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         internal static void AssertIsLabeledStatement(this BoundStatement node)
         {
             Debug.Assert(node != null);
-            Debug.Assert(node.Kind == BoundKind.LabelStatement || node.Kind == BoundKind.LabeledStatement || node.Kind == BoundKind.SwitchSection);
+            Debug.Assert(node.Kind == BoundKind.LabelStatement || node.Kind == BoundKind.LabeledStatement || node.Kind == BoundKind.SwitchSection || node.Kind == BoundKind.MatchSection);
         }
 
 
@@ -34,6 +34,17 @@ namespace Microsoft.CodeAnalysis.CSharp
                     foreach (var boundSwitchLabel in ((BoundSwitchSection)node).BoundSwitchLabels)
                     {
                         if (boundSwitchLabel.Label == label)
+                        {
+                            return;
+                        }
+                    }
+                    Debug.Assert(false);
+                    break;
+
+                case BoundKind.MatchSection:
+                    foreach (var boundMatchLabel in ((BoundMatchSection)node).BoundMatchLabels)
+                    {
+                        if (boundMatchLabel.Label == label)
                         {
                             return;
                         }

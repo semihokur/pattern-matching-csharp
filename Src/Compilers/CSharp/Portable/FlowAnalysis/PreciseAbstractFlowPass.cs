@@ -818,6 +818,15 @@ namespace Microsoft.CodeAnalysis.CSharp
                             }
                         }
                         break;
+                    case BoundKind.MatchSection:
+                        {
+                            var sec = (BoundMatchSection)node;
+                            foreach (var label in sec.BoundMatchLabels)
+                            {
+                                backwardBranchChanged |= ResolveBranches(label.Label, sec);
+                            }
+                        }
+                        break;
                     default:
                         // there are no other kinds of labels
                         Debug.Assert(false);
@@ -1575,6 +1584,18 @@ namespace Microsoft.CodeAnalysis.CSharp
             return null;
         }
 
+        public override BoundNode VisitMatchStatement(BoundMatchStatement node)
+        {
+            // visit switch header
+            LocalState breakState = VisitMatchHeader(node);
+            SetUnreachable();
+
+            // visit switch block
+            VisitMatchBlock(node);
+            ResolveBreaks(breakState, node.BreakLabel);
+            return null;
+        }
+
         private LocalState VisitSwitchHeader(BoundSwitchStatement node)
         {
             // Initial value for the Break state for a switch statement is established as follows:
@@ -1628,6 +1649,47 @@ namespace Microsoft.CodeAnalysis.CSharp
             return breakState;
         }
 
+        private LocalState VisitMatchHeader(BoundMatchStatement node)
+        {
+            // Initial value for the Break state for a switch statement is established as follows:
+            //  Break state = UnreachableState if either of the following is true:
+            //  (1) there is a default label, or
+            //  (2) the switch expression is constant and there is a matching case label.
+            //  Otherwise, the Break state = current state.
+
+            // visit switch expression
+            VisitRvalue(node.BoundExpression);
+            LocalState breakState = this.State;
+
+            // For a switch statement, we simulate a possible jump to the switch labels to ensure that
+            // the label is not treated as an unused label and a pending branch to the label is noted.
+
+            // However, if switch expression is a constant, we must have determined the single target label
+            // at bind time, i.e. node.ConstantTargetOpt, and we must simulate a jump only to this label.
+
+            bool hasDefaultLabel = false;
+            foreach (var section in node.MatchSections)
+            {
+                foreach (var boundMatchLabel in section.BoundMatchLabels)
+                {
+                    var label = boundMatchLabel.Label;
+                    hasDefaultLabel = hasDefaultLabel || label.IdentifierNodeOrToken.CSharpKind() == SyntaxKind.DefaultSwitchLabel;
+                    SetState(breakState.Clone());
+                    var simulatedGoto = new BoundGotoStatement(node.Syntax, label);
+                    VisitGotoStatement(simulatedGoto);
+                }
+            }
+
+            if (hasDefaultLabel)
+            {
+                // Condition (1) for an unreachable break state is satisfied
+                breakState = UnreachableState();
+            }
+
+
+            return breakState;
+        }
+
         private void VisitSwitchBlock(BoundSwitchStatement node)
         {
             var switchSections = node.SwitchSections;
@@ -1639,9 +1701,26 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
+        private void VisitMatchBlock(BoundMatchStatement node)
+        {
+            var matchSections = node.MatchSections;
+            var iLastSection = (matchSections.Length - 1);
+            // visit switch sections
+            for (var iSection = 0; iSection <= iLastSection; iSection++)
+            {
+                VisitMatchSection(matchSections[iSection], iSection == iLastSection);
+            }
+        }
+
         public virtual BoundNode VisitSwitchSection(BoundSwitchSection node, bool lastSection)
         {
             return VisitSwitchSection(node);
+        }
+
+        public virtual BoundNode VisitMatchSection(BoundMatchSection node, bool lastSection)
+        {
+            // TODO: a match variable is definitely assigned when the match is satisfied.
+            return VisitMatchSection(node);
         }
 
         public override BoundNode VisitSwitchSection(BoundSwitchSection node)
@@ -1651,6 +1730,21 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 VisitRvalue(boundSwitchLabel.ExpressionOpt);
                 VisitSwitchSectionLabel(boundSwitchLabel.Label, node);
+            }
+
+            // visit switch section body
+            VisitStatementList(node);
+
+            return null;
+        }
+
+        public override BoundNode VisitMatchSection(BoundMatchSection node)
+        {
+            // visit switch section labels
+            foreach (var boundMatchLabel in node.BoundMatchLabels)
+            {
+                //VisitRvalue(boundMatchLabel.PatternOpt);
+                VisitMatchSectionLabel(boundMatchLabel.Label, node);
             }
 
             // visit switch section body
@@ -1887,6 +1981,13 @@ namespace Microsoft.CodeAnalysis.CSharp
             return null;
         }
 
+        public override BoundNode VisitMatchExpression(BoundMatchExpression node)
+        {
+            // TODO: a match variable is definitely assigned *when true* for the enclosing match expression
+            VisitRvalue(node.Operand);
+            return null;
+        }
+
         public override BoundNode VisitMethodGroup(BoundMethodGroup node)
         {
             if (node.ReceiverOpt != null)
@@ -2101,6 +2202,11 @@ namespace Microsoft.CodeAnalysis.CSharp
         }
 
         protected virtual void VisitSwitchSectionLabel(LabelSymbol label, BoundSwitchSection node)
+        {
+            VisitLabel(label, node);
+        }
+
+        protected virtual void VisitMatchSectionLabel(LabelSymbol label, BoundMatchSection node)
         {
             VisitLabel(label, node);
         }

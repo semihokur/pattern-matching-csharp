@@ -1023,6 +1023,27 @@
       <summary>Creates an NameColonSyntax node.</summary>
     </FactoryComment>
   </Node>
+  <Node Name="ColonNameSyntax" Base="CSharpSyntaxNode">
+    <Kind Name="ColonName"/>
+    <Field Name="ColonToken" Type="SyntaxToken">
+      <Kind Name="ColonToken"/>
+      <PropertyComment>
+        <summary>SyntaxToken representing colon.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="Name" Type="IdentifierNameSyntax">
+      <Kind Name="IdentifierName"/>
+      <PropertyComment>
+        <summary>IdentifierNameSyntax representing the identifer name.</summary>
+      </PropertyComment>
+    </Field>
+    <TypeComment>
+      <summary>Class which represents the syntax node for name colon syntax.</summary>
+    </TypeComment>
+    <FactoryComment>
+      <summary>Creates an NameColonSyntax node.</summary>
+    </FactoryComment>
+  </Node>
   <Node Name="CastExpressionSyntax" Base="ExpressionSyntax">
     <Kind Name="CastExpression"/>
     <Field Name="OpenParenToken" Type="SyntaxToken">
@@ -2043,6 +2064,42 @@
       <summary>Creates a DefaultSwitchLabelSyntax node.</summary>
     </FactoryComment>
   </Node>
+  <Node Name="CaseMatchLabelSyntax" Base="SwitchLabelSyntax">
+    <Kind Name="CaseMatchLabel"/>
+    <Field Name="Keyword" Type="SyntaxToken" Override="true">
+      <Kind Name="CaseKeyword"/>
+      <PropertyComment>
+        <summary>Gets the case keyword token.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="Pattern" Type="PatternSyntax">
+      <PropertyComment>
+        <summary>
+          Gets a PatternSyntax that represents the pattern that gets matched for the case label.
+        </summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="WhereKeyword" Type="SyntaxToken" Optional="true">
+      <Kind Name="WhereKeyword"/>
+      <PropertyComment>
+        <summary>Gets the with keyword token.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="Condition" Type="ExpressionSyntax"  Optional="true">
+      <PropertyComment>
+        <summary>
+          Gets an ExpressionSyntax that represents the condition after the with keyword.
+        </summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="ColonToken" Type="SyntaxToken" Override="true"/>
+    <TypeComment>
+      <summary>Represents a case label within a switch statement.</summary>
+    </TypeComment>
+    <FactoryComment>
+      <summary>Creates a CaseMatchLabelSyntax node.</summary>
+    </FactoryComment>
+  </Node>
   <Node Name="TryStatementSyntax" Base="StatementSyntax">
     <Kind Name="TryStatement"/>
     <Field Name="TryKeyword" Type="SyntaxToken">
@@ -2398,6 +2455,37 @@
       </PropertyComment>
     </Field>
   </AbstractNode>
+  <Node Name="RecordDeclarationSyntax" Base="TypeDeclarationSyntax">
+    <TypeComment>
+      <summary>Record type declaration syntax.</summary>
+    </TypeComment>
+    <Kind Name="RecordDeclaration"/>
+    <Field Name="AttributeLists" Type="SyntaxList&lt;AttributeListSyntax&gt;" Override="true"/>
+    <Field Name="Modifiers" Type="SyntaxList&lt;SyntaxToken&gt;" Override="true"/>
+    <Field Name="Keyword" Type="SyntaxToken" Override="true">
+      <PropertyComment>
+        <summary>Gets the class keyword token.</summary>
+      </PropertyComment>
+      <Kind Name="ClassKeyword"/>
+    </Field>
+    <Field Name="Identifier" Type="SyntaxToken" Override="true">
+      <Kind Name="IdentifierToken"/>
+    </Field>
+    <Field Name="TypeParameterList" Type="TypeParameterListSyntax" Optional="true" Override="true"/>
+    <Field Name="ParameterList" Type="RecordParameterListSyntax" Optional="true"/>
+    <Field Name="BaseList" Type="BaseListSyntax" Optional="true" Override="true"/>
+    <Field Name="ConstraintClauses" Type="SyntaxList&lt;TypeParameterConstraintClauseSyntax&gt;" Override="true"/>
+    <Field Name="OpenBraceToken" Type="SyntaxToken" Override="true">
+      <Kind Name="OpenBraceToken"/>
+    </Field>
+    <Field Name="Members" Type="SyntaxList&lt;MemberDeclarationSyntax&gt;" Override="true"/>
+    <Field Name="CloseBraceToken" Type="SyntaxToken" Override="true">
+      <Kind Name="CloseBraceToken"/>
+    </Field>
+    <Field Name="SemicolonToken" Type="SyntaxToken" Optional="true" Override="true">
+      <Kind Name="SemicolonToken"/>
+    </Field>
+  </Node>
   <Node Name="ClassDeclarationSyntax" Base="TypeDeclarationSyntax">
     <TypeComment>
       <summary>Class type declaration syntax.</summary>
@@ -2855,6 +2943,7 @@
       <Kind Name="GreaterThanEqualsToken"/>
       <Kind Name="FalseKeyword"/>
       <Kind Name="TrueKeyword"/>
+      <Kind Name="IsKeyword"/>
     </Field>
     <Field Name="ParameterList" Type="ParameterListSyntax" Override="true"/>
     <Field Name="Body" Type="BlockSyntax" Optional="true" Override="true"/>
@@ -3140,6 +3229,25 @@
       <Kind Name="CloseParenToken"/>
     </Field>
   </Node>
+  <Node Name="RecordParameterListSyntax" Base="CSharpSyntaxNode">
+    <TypeComment>
+      <summary>Parameter list syntax.</summary>
+    </TypeComment>
+    <Kind Name="RecordParameterList"/>
+    <Field Name="OpenParenToken" Type="SyntaxToken">
+      <PropertyComment>
+        <summary>Gets the open paren token.</summary>
+      </PropertyComment>
+      <Kind Name="OpenParenToken"/>
+    </Field>
+    <Field Name="Parameters" Type="SeparatedSyntaxList&lt;RecordParameterSyntax&gt;"/>
+    <Field Name="CloseParenToken" Type="SyntaxToken">
+      <PropertyComment>
+        <summary>Gets the close paren token.</summary>
+      </PropertyComment>
+      <Kind Name="CloseParenToken"/>
+    </Field>
+  </Node>
   <Node Name="BracketedParameterListSyntax" Base="BaseParameterListSyntax">
     <TypeComment>
       <summary>Parameter list syntax with surrounding brackets.</summary>
@@ -3181,6 +3289,36 @@
       </PropertyComment>
       <Kind Name="IdentifierToken"/>
       <Kind Name="ArgListKeyword"/>
+    </Field>
+    <Field Name="Default" Type="EqualsValueClauseSyntax" Optional="true"/>
+  </Node>
+  <Node Name="RecordParameterSyntax" Base="CSharpSyntaxNode">
+    <TypeComment>
+      <summary>Parameter syntax.</summary>
+    </TypeComment>
+    <Kind Name="RecordParameter"/>
+    <Field Name="AttributeLists" Type="SyntaxList&lt;AttributeListSyntax&gt;">
+      <PropertyComment>
+        <summary>Gets the attribute declaration list.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="Modifiers" Type="SyntaxList&lt;SyntaxToken&gt;">
+      <PropertyComment>
+        <summary>Gets the modifier list.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="Type" Type="TypeSyntax" Optional="true"/>
+    <Field Name="Identifier" Type="SyntaxToken">
+      <PropertyComment>
+        <summary>Gets the identifier.</summary>
+      </PropertyComment>
+      <Kind Name="IdentifierToken"/>
+      <Kind Name="ArgListKeyword"/>
+    </Field>
+    <Field Name="ColonName" Type="ColonNameSyntax" Optional="true">
+      <PropertyComment>
+        <summary>NameColonSyntax node representing the optional name arguments.</summary>
+      </PropertyComment>
     </Field>
     <Field Name="Default" Type="EqualsValueClauseSyntax" Optional="true"/>
   </Node>
@@ -3895,5 +4033,127 @@
     <FactoryComment>
       <summary>Creates an NameOfExpressionSyntax node.</summary>
     </FactoryComment>
+  </Node>
+  <Node Name="MatchExpressionSyntax" Base="ExpressionSyntax">
+    <Kind Name="MatchExpression"/>
+    <Field Name="Expression" Type="ExpressionSyntax">
+      <PropertyComment>
+        <summary>ExpressionSyntax node representing the expression on the left of the binary operator.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="IsKeyword" Type="SyntaxToken">
+      <Kind Name="IsKeyword"/>
+    </Field>
+    <Field Name="Pattern" Type="PatternSyntax">
+      <PropertyComment>
+        <summary>ExpressionSyntax node representing the expression on the right of the binary operator.</summary>
+      </PropertyComment>
+    </Field>
+    <TypeComment>
+      <summary>Class which represents an expression that has a binary operator.</summary>
+    </TypeComment>
+    <FactoryComment>
+      <summary>Creates an BinaryExpressionSyntax node.</summary>
+    </FactoryComment>
+  </Node>
+  <AbstractNode Name="PatternSyntax" Base="CSharpSyntaxNode">
+    <TypeComment>
+      <summary></summary>
+    </TypeComment>
+  </AbstractNode>
+  <Node Name="WildCardPatternSyntax" Base="PatternSyntax">
+    <Kind Name="WildCardPattern"/>
+    <Field Name="WildCardToken" Type="SyntaxToken">
+      <Kind Name="AsteriskToken"/>
+    </Field>
+  </Node>
+  <Node Name="ConstantPatternSyntax" Base="PatternSyntax">
+    <Kind Name="ConstantPattern"/>
+    <Field Name="Expression" Type="ExpressionSyntax">
+      <PropertyComment>
+        <summary>ExpressionSyntax node representing the constant expression.</summary>
+      </PropertyComment>
+    </Field>
+  </Node>
+  <Node Name="DeclarationPatternSyntax" Base="PatternSyntax">
+    <Kind Name="DeclarationPattern"/>
+    <Field Name="Type" Type="TypeSyntax"/>
+    <Field Name="Identifier" Type="SyntaxToken">
+      <PropertyComment>
+        <summary>Gets the identifier.</summary>
+      </PropertyComment>
+      <Kind Name="IdentifierToken"/>
+    </Field>
+  </Node>
+  <Node Name="RecursivePatternSyntax" Base="PatternSyntax">
+    <Kind Name="RecursivePattern"/>
+    <Field Name="Type" Type="TypeSyntax" />
+    <Field Name="PatternList" Type="SubRecursivePatternListSyntax">
+      <PropertyComment>
+        <summary>SubPatternListSyntax node representing the list of patterns in a recursive pattern.</summary>
+      </PropertyComment>
+    </Field>
+  </Node>
+  <Node Name="SubRecursivePatternListSyntax" Base="CSharpSyntaxNode">
+    <Kind Name="SubRecursivePatternList"/>
+    <Field Name="OpenParenToken" Type="SyntaxToken">
+      <Kind Name="OpenParenToken"/>
+      <PropertyComment>
+        <summary>SyntaxToken representing open parenthesis.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="SubPatterns" Type="SeparatedSyntaxList&lt;SubRecursivePatternSyntax&gt;">
+      <PropertyComment>
+        <summary>SeparatedSyntaxList of SubPatternsSyntax representing the list of subpatterns.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="CloseParenToken" Type="SyntaxToken">
+      <Kind Name="CloseParenToken"/>
+      <PropertyComment>
+        <summary>SyntaxToken representing close parenthesis.</summary>
+      </PropertyComment>
+    </Field>
+  </Node>
+  <Node Name="SubRecursivePatternSyntax" Base="CSharpSyntaxNode">
+    <Kind Name="SubRecursivePattern"/>
+    <Field Name="NameColon" Type="NameColonSyntax" Optional="true">
+      <PropertyComment>
+        <summary>NameColonSyntax node representing the optional name arguments.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="Pattern" Type="PatternSyntax">
+      <PropertyComment>
+        <summary>PatternSyntax node representing the pattern.</summary>
+      </PropertyComment>
+    </Field>
+  </Node>
+  <Node Name="PropertyPatternSyntax" Base="PatternSyntax">
+    <Kind Name="PropertyPattern"/>
+    <Field Name="Type" Type="TypeSyntax" />
+    <Field Name="PatternList" Type="SubPropertyPatternListSyntax" />
+  </Node>
+  <Node Name="SubPropertyPatternListSyntax" Base="CSharpSyntaxNode">
+    <Kind Name="SubPropertyPatternList"/>
+    <Field Name="OpenBraceToken" Type="SyntaxToken">
+      <Kind Name="OpenBraceToken"/>
+      <PropertyComment>
+        <summary>SyntaxToken representing open brace.</summary>
+      </PropertyComment>
+    </Field>
+    <Field Name="SubPatterns" Type="SeparatedSyntaxList&lt;SubPropertyPatternSyntax&gt;" />
+    <Field Name="CloseBraceToken" Type="SyntaxToken">
+      <Kind Name="CloseBraceToken"/>
+      <PropertyComment>
+        <summary>SyntaxToken representing close brace.</summary>
+      </PropertyComment>
+    </Field>
+  </Node>
+  <Node Name="SubPropertyPatternSyntax" Base="CSharpSyntaxNode">
+    <Kind Name="SubPropertyPattern"/>
+    <Field Name="Left" Type="IdentifierNameSyntax"/>
+    <Field Name="IsKeyword" Type="SyntaxToken">
+      <Kind Name="IsKeyword"/>
+    </Field>
+    <Field Name="Pattern" Type="PatternSyntax" />
   </Node>
 </Tree>

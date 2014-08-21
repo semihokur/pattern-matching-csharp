@@ -780,6 +780,11 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return VisitTypeDeclarationCore(node);
             }
 
+            public override Binder VisitRecordDeclaration(RecordDeclarationSyntax node)
+            {
+                return VisitTypeDeclarationCore(node);
+            }
+
             public override Binder VisitStructDeclaration(StructDeclarationSyntax node)
             {
                 return VisitTypeDeclarationCore(node);

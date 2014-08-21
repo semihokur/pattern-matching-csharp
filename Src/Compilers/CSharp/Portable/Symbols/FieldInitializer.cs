@@ -32,9 +32,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
     {
         public readonly FieldInitializer Initializer;
         public readonly Binder Binder;
-        public readonly EqualsValueClauseSyntax EqualsValue;
+        public readonly CSharpSyntaxNode EqualsValue;
 
-        public FieldInitializerInfo(FieldInitializer initializer, Binder binder, EqualsValueClauseSyntax equalsValue)
+        public FieldInitializerInfo(FieldInitializer initializer, Binder binder, CSharpSyntaxNode equalsValue)
         {
             Initializer = initializer;
             Binder = binder;

@@ -362,6 +362,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 {
                     case SymbolKind.Method:
                         var method = (MethodSymbol)member;
+
+                        if (method.IsImplicitlyDeclared)
+                            break;
                         if (MethodSymbol.CanOverrideOrHide(method.MethodKind) && !method.IsAccessor())
                         {
                             if (member.IsOverride)
@@ -397,6 +400,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                         var getMethod = property.GetMethod;
                         var setMethod = property.SetMethod;
 
+                        if (property.IsImplicitlyDeclared)
+                            break;
                         // Handle the accessors here, instead of in the loop, so that we can ensure that
                         // they're checked *after* the corresponding property.
                         if (member.IsOverride)

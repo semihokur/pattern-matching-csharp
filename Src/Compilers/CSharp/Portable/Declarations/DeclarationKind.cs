@@ -17,7 +17,8 @@ namespace Microsoft.CodeAnalysis.CSharp
         Delegate,
         Script,
         Submission,
-        ImplicitClass
+        ImplicitClass,
+        Record
     }
 
     internal static partial class EnumConversions
@@ -27,6 +28,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             switch (kind)
             {
                 case SyntaxKind.ClassDeclaration: return DeclarationKind.Class;
+                case SyntaxKind.RecordDeclaration: return DeclarationKind.Record;
                 case SyntaxKind.InterfaceDeclaration: return DeclarationKind.Interface;
                 case SyntaxKind.StructDeclaration: return DeclarationKind.Struct;
                 case SyntaxKind.NamespaceDeclaration: return DeclarationKind.Namespace;

@@ -114,7 +114,11 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         public static string OperatorNameFromDeclaration(Syntax.InternalSyntax.OperatorDeclarationSyntax declaration)
         {
-            if (SyntaxFacts.IsBinaryExpressionOperatorToken(declaration.OperatorToken.Kind))
+            if (declaration.OperatorToken.Kind == SyntaxKind.IsKeyword)
+            {
+                return WellKnownMemberNames.IsOperatorName;
+            }
+            else if (SyntaxFacts.IsBinaryExpressionOperatorToken(declaration.OperatorToken.Kind))
             {
                 // Some tokens may be either unary or binary operators (e.g. +, -).
                 if (SyntaxFacts.IsPrefixUnaryExpressionOperatorToken(declaration.OperatorToken.Kind) &&

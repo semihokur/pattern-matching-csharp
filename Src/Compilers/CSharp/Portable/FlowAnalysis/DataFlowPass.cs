@@ -775,11 +775,16 @@ namespace Microsoft.CodeAnalysis.CSharp
                 // CONSIDER: could suppress this diagnostic in cases where the local was declared in a using
                 // or fixed statement because there's a special error code for not initializing those.
 
-                ErrorCode errorCode =
-                    (symbol.Kind == SymbolKind.Parameter && ((ParameterSymbol)symbol).RefKind == RefKind.Out) ?
-                    (((ParameterSymbol)symbol).IsThis) ? ErrorCode.ERR_UseDefViolationThis : ErrorCode.ERR_UseDefViolationOut :
-                        ErrorCode.ERR_UseDefViolation;
-                Diagnostics.Add(errorCode, new SourceLocation(node), symbol.Name);
+                // ignore SynthesizedLocals! also ignore SourceLocalSymbol whose declaration kind is Pattern, for now!
+                // TODO: it is important to get definite assignment right for them. A pattern variable is definitely assigned when the enclosing (full) pattern returns true.
+                if (!(symbol is SynthesizedLocal) && (!(symbol is SourceLocalSymbol) || (((SourceLocalSymbol) symbol).DeclarationKind != LocalDeclarationKind.Pattern)))
+                {
+                    ErrorCode errorCode =
+                        (symbol.Kind == SymbolKind.Parameter && ((ParameterSymbol)symbol).RefKind == RefKind.Out) ?
+                        (((ParameterSymbol)symbol).IsThis) ? ErrorCode.ERR_UseDefViolationThis : ErrorCode.ERR_UseDefViolationOut :
+                            ErrorCode.ERR_UseDefViolation;
+                    Diagnostics.Add(errorCode, new SourceLocation(node), symbol.Name);
+                }
             }
 
             alreadyReported[slot] = true; // mark the variable's slot so that we don't complain about the variable again
@@ -1415,11 +1420,14 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         private void ReportIfUnused(LocalSymbol symbol, bool assigned)
         {
-            if (!usedVariables.Contains(symbol))
+            if (symbol.SynthesizedLocalKind == SynthesizedLocalKind.None)
             {
-                if (!string.IsNullOrEmpty(symbol.Name)) // avoid diagnostics for parser-inserted names
+                if (!usedVariables.Contains(symbol))
                 {
-                    Diagnostics.Add(assigned && writtenVariables.Contains(symbol) ? ErrorCode.WRN_UnreferencedVarAssg : ErrorCode.WRN_UnreferencedVar, symbol.Locations[0], symbol.Name);
+                    if (!string.IsNullOrEmpty(symbol.Name)) // avoid diagnostics for parser-inserted names
+                    {
+                        Diagnostics.Add(assigned && writtenVariables.Contains(symbol) ? ErrorCode.WRN_UnreferencedVarAssg : ErrorCode.WRN_UnreferencedVar, symbol.Locations[0], symbol.Name);
+                    }
                 }
             }
         }
@@ -1883,6 +1891,27 @@ namespace Microsoft.CodeAnalysis.CSharp
         }
 
         public override BoundNode VisitDynamicObjectInitializerMember(BoundDynamicObjectInitializerMember node)
+        {
+            return null;
+        }
+
+        // TODO: pattern variables are definitely assigned when the entire enclosing pattern is true.
+        public override BoundNode VisitDeclarationPattern(BoundDeclarationPattern node)
+        {
+            return null;
+        }
+
+        public override BoundNode VisitConstantPattern(BoundConstantPattern node)
+        {
+            return null;
+        }
+
+        public override BoundNode VisitWildCardPattern(BoundWildCardPattern node)
+        {
+            return null;
+        }
+
+        public override BoundNode VisitRecursivePattern(BoundRecursivePattern node)
         {
             return null;
         }
