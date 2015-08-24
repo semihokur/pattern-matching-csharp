@@ -59,14 +59,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         private const int MethodKindOffset = 0;
         private const int DeclarationModifiersOffset = 5;
-        private const int ReturnsVoidOffset = 26;
-        private const int IsExtensionMethodOffset = 27;
-        private const int IsMetadataVirtualIgnoringInterfaceChangesOffset = 28;
-        private const int IsMetadataVirtualOffset = 29;
-        private const int IsMetadataVirtualLockedOffset = 30;
+        private const int ReturnsVoidOffset = 27;
+        private const int IsExtensionMethodOffset = 28;
+        private const int IsMetadataVirtualIgnoringInterfaceChangesOffset = 29;
+        private const int IsMetadataVirtualOffset = 30;
+        private const int IsMetadataVirtualLockedOffset = 31;
 
         private const int MethodKindMask = 0x1F << MethodKindOffset;
-        private const int DeclarationModifiersMask = 0x1FFFFF << DeclarationModifiersOffset;
+        private const int DeclarationModifiersMask = 0x1FFFFFF << DeclarationModifiersOffset;
         private const int ReturnsVoidMask = 0x1 << ReturnsVoidOffset;
         private const int IsExtensionMethodMask = 0x1 << IsExtensionMethodOffset;
         private const int IsMetadataVirtualIgnoringInterfaceChangesMask = 0x1 << IsMetadataVirtualIgnoringInterfaceChangesOffset;

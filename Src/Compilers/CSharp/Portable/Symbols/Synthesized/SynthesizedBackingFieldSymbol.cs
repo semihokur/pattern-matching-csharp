@@ -15,11 +15,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
     /// </summary>
     internal sealed class SynthesizedBackingFieldSymbol : SynthesizedFieldSymbolBase
     {
-        private readonly SourcePropertySymbol property;
+        private readonly PropertySymbol property;
         private readonly bool hasInitializer;
 
         public SynthesizedBackingFieldSymbol(
-            SourcePropertySymbol property,
+            PropertySymbol property,
             string name,
             bool isReadOnly,
             bool isStatic,

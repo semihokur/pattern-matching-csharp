@@ -97,9 +97,142 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             return parameters;
         }
 
+        public static ImmutableArray<ParameterSymbol> MakeRecordParameters(
+            Binder binder,
+            Symbol owner,
+            RecordParameterListSyntax syntax,
+            bool allowRefOrOut,
+            out SyntaxToken arglistToken,
+            DiagnosticBag diagnostics)
+        {
+            arglistToken = default(SyntaxToken);
+
+            int parameterIndex = 0;
+            int firstDefault = -1;
+
+            var builder = ArrayBuilder<ParameterSymbol>.GetInstance();
+            ImmutableArray<ParameterSymbol> parameters;
+
+            foreach (var parameterSyntax in syntax.Parameters)
+            {
+
+                SyntaxToken outKeyword;
+                SyntaxToken refKeyword;
+                SyntaxToken paramsKeyword;
+                SyntaxToken thisKeyword;
+                var refKind = GetModifiers(parameterSyntax.Modifiers, out outKeyword, out refKeyword, out paramsKeyword, out thisKeyword);
+
+                if (parameterSyntax.IsArgList)
+                {
+                    arglistToken = parameterSyntax.Identifier;
+                    // The native compiler produces "Expected type" here, in the parser. Roslyn produces
+                    // the somewhat more informative "arglist not valid" error.
+                    if (paramsKeyword.CSharpKind() != SyntaxKind.None || outKeyword.CSharpKind() != SyntaxKind.None ||
+                        refKeyword.CSharpKind() != SyntaxKind.None || thisKeyword.CSharpKind() != SyntaxKind.None)
+                    {
+                        // CS1669: __arglist is not valid in this context
+                        diagnostics.Add(ErrorCode.ERR_IllegalVarArgs, arglistToken.GetLocation());
+                    }
+                    continue;
+                }
+
+                if (parameterSyntax.Default != null && firstDefault == -1)
+                {
+                    firstDefault = parameterIndex;
+                }
+
+                Debug.Assert(parameterSyntax.Type != null);
+                var parameterType = binder.BindType(parameterSyntax.Type, diagnostics);
+
+                if (!allowRefOrOut && (refKind != RefKind.None))
+                {
+                    var outOrRefKeyword = (outKeyword.CSharpKind() != SyntaxKind.None) ? outKeyword : refKeyword;
+                    Debug.Assert(outOrRefKeyword.CSharpKind() != SyntaxKind.None);
+
+                    // error CS0631: ref and out are not valid in this context
+                    diagnostics.Add(ErrorCode.ERR_IllegalRefParam, outOrRefKeyword.GetLocation());
+                }
+
+                var parameter = SourceParameterSymbol.Create(
+                    binder,
+                    owner,
+                    parameterType,
+                    parameterSyntax,
+                    refKind,
+                    parameterSyntax.Identifier,
+                    parameterIndex,
+                    (paramsKeyword.CSharpKind() != SyntaxKind.None),
+                    parameterIndex == 0 && thisKeyword.CSharpKind() != SyntaxKind.None,
+                    diagnostics);
+
+                ReportRecordParameterErrors(owner, parameterSyntax, parameter, firstDefault, diagnostics);
+
+                builder.Add(parameter);
+                ++parameterIndex;
+            }
+
+            parameters = builder.ToImmutableAndFree();
+
+            var methodOwner = owner as MethodSymbol;
+            var typeParameters = (object)methodOwner != null ?
+                methodOwner.TypeParameters :
+                default(ImmutableArray<TypeParameterSymbol>);
+
+            binder.ValidateParameterNameConflicts(typeParameters, parameters, diagnostics);
+            return parameters;
+        }
+
         private static void ReportParameterErrors(
             Symbol owner,
             ParameterSyntax parameterSyntax,
+            SourceParameterSymbol parameter,
+            int firstDefault,
+            DiagnosticBag diagnostics)
+        {
+            TypeSymbol parameterType = parameter.Type;
+            int parameterIndex = parameter.Ordinal;
+            bool isDefault = parameterSyntax.Default != null;
+            SyntaxToken thisKeyword = parameterSyntax.Modifiers.FirstOrDefault(SyntaxKind.ThisKeyword);
+
+            if (thisKeyword.CSharpKind() == SyntaxKind.ThisKeyword && parameterIndex != 0)
+            {
+                // Report CS1100 on "this". Note that is a change from Dev10
+                // which reports the error on the type following "this".
+
+                // error CS1100: Method '{0}' has a parameter modifier 'this' which is not on the first parameter
+                diagnostics.Add(ErrorCode.ERR_BadThisParam, thisKeyword.GetLocation(), owner.Name);
+            }
+            else if (parameter.IsParams && owner.IsOperator())
+            {
+                // error CS1670: params is not valid in this context
+                diagnostics.Add(ErrorCode.ERR_IllegalParams, parameterSyntax.Modifiers.First(t => t.CSharpKind() == SyntaxKind.ParamsKeyword).GetLocation());
+            }
+            else if (parameter.IsParams && !parameterType.IsSingleDimensionalArray())
+            {
+                // error CS0225: The params parameter must be a single dimensional array
+                diagnostics.Add(ErrorCode.ERR_ParamsMustBeArray, parameterSyntax.Modifiers.First(t => t.CSharpKind() == SyntaxKind.ParamsKeyword).GetLocation());
+            }
+            else if (parameter.Type.IsStatic && !parameter.ContainingSymbol.ContainingType.IsInterfaceType())
+            {
+                // error CS0721: '{0}': static types cannot be used as parameters
+                diagnostics.Add(ErrorCode.ERR_ParameterIsStaticClass, owner.Locations[0], parameter.Type);
+            }
+            else if (firstDefault != -1 && parameterIndex > firstDefault && !isDefault && !parameter.IsParams)
+            {
+                // error CS1737: Optional parameters must appear after all required parameters
+                Location loc = parameterSyntax.Identifier.GetNextToken(includeZeroWidth: true).GetLocation(); //could be missing
+                diagnostics.Add(ErrorCode.ERR_DefaultValueBeforeRequiredValue, loc);
+            }
+            else if (parameter.RefKind != RefKind.None && parameter.Type.IsRestrictedType())
+            {
+                // CS1601: Cannot make reference to variable of type 'System.TypedReference'
+                diagnostics.Add(ErrorCode.ERR_MethodArgCantBeRefAny, parameterSyntax.Location, parameter.Type);
+            }
+        }
+
+        private static void ReportRecordParameterErrors(
+            Symbol owner,
+            RecordParameterSyntax parameterSyntax,
             SourceParameterSymbol parameter,
             int firstDefault,
             DiagnosticBag diagnostics)

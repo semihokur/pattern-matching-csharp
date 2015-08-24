@@ -53,13 +53,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         // y = IsManagedType.  2 bits.
         // d = FieldDefinitionsNoted. 1 bit
         private const int SpecialTypeMask = 0x3F;
-        private const int DeclarationModifiersMask = 0x1FFFFF;
+        private const int DeclarationModifiersMask = 0x1FFFFFF;
         private const int IsManagedTypeMask = 0x3;
 
         private const int SpecialTypeOffset = 0;
         private const int DeclarationModifiersOffset = 6;
-        private const int IsManagedTypeOffset = 26;
-        private const int FieldDefinitionsNotedOffset = 28;
+        private const int IsManagedTypeOffset = 28;
+        private const int FieldDefinitionsNotedOffset = 30;
 
         private int flags;
 
@@ -198,7 +198,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 case TypeKind.Class:
                 case TypeKind.Submission:
                     // static, sealed, and abstract allowed if a class
-                    allowedModifiers |= DeclarationModifiers.Static | DeclarationModifiers.Sealed | DeclarationModifiers.Abstract | DeclarationModifiers.Unsafe;
+                    allowedModifiers |= DeclarationModifiers.Static | DeclarationModifiers.Sealed | DeclarationModifiers.Abstract | DeclarationModifiers.Unsafe | DeclarationModifiers.Record;
                     break;
                 case TypeKind.Struct:
                 case TypeKind.Interface:
@@ -638,6 +638,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             get
             {
                 return (this.DeclarationModifiers & DeclarationModifiers.Sealed) != 0;
+            }
+        }
+
+        internal override bool IsRecord
+        {
+            get
+            {
+                return (this.DeclarationModifiers & DeclarationModifiers.Record) != 0;
             }
         }
 
@@ -2188,6 +2196,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                         AddNonTypeMembers(builder, structDecl, structDecl.ParameterList, structDecl.Members, diagnostics);
                         break;
 
+                    case SyntaxKind.RecordDeclaration:
+                        var recordDecl = (RecordDeclarationSyntax)syntax;
+                        AddCompilerGeneratedMembersForRecord(builder, recordDecl, recordDecl.ParameterList, diagnostics);
+                        AddNonTypeMembers(builder, recordDecl, null, recordDecl.Members, diagnostics);
+                        break;
+
                     default:
                         throw ExceptionUtilities.UnexpectedValue(syntax.CSharpKind());
                 }
@@ -2740,8 +2754,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             SyntaxList<MemberDeclarationSyntax> members,
             DiagnosticBag diagnostics)
         {
-            bool havePrimaryCtor = false;
 
+            bool havePrimaryCtor = result.PrimaryCtor != null; // We might add the primaryCtor for the records beforehand.
             if (primaryCtorParameterList != null)
             {
                 havePrimaryCtor = true;
@@ -3049,6 +3063,89 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
             AddInitializers(ref result.InstanceInitializers, typeDeclaration, instanceInitializers);
             AddInitializers(ref result.StaticInitializers, typeDeclaration, staticInitializers);
+        }
+
+        private void AddCompilerGeneratedMembersForRecord(MembersAndInitializersBuilder result, RecordDeclarationSyntax recordDeclaration, RecordParameterListSyntax primaryCtorRecordParameterList, DiagnosticBag diagnostics)
+        {
+            ArrayBuilder<FieldInitializer> instanceInitializers = null;
+
+            var constructor = SourceConstructorSymbol.CreatePrimaryConstructorSymbol(this, primaryCtorRecordParameterList, diagnostics);
+            result.NonTypeNonIndexerMembers.Add(constructor);
+
+            if ((object)result.PrimaryCtor == null)
+            {
+                result.PrimaryCtor = constructor;
+            }
+            else
+            {
+                diagnostics.Add(ErrorCode.ERR_SeveralPartialsDeclarePrimaryCtor, new SourceLocation(primaryCtorRecordParameterList));
+            }
+
+            var binder = this.GetBinder(primaryCtorRecordParameterList);
+            int i = 0;
+            var isParameterTypes = ArrayBuilder<TypeSymbol>.GetInstance();
+            // We need to store which property corresponds to which parameter. 
+            // We use this information during creating the op_Is
+            var propertiesForParameters = ArrayBuilder<string>.GetInstance();
+            var isParameterNames = ArrayBuilder<string>.GetInstance();
+
+            foreach (var param in primaryCtorRecordParameterList.Parameters)
+            {
+                var type = binder.BindType(param.Type, diagnostics);
+
+                string propertyName;
+                Location propertyNameLocation;
+                if (param.ColonName != null)
+                {
+                    var colonNameIdentifier = param.ColonName.Name.Identifier;
+                    propertyName = colonNameIdentifier.ValueText;
+                    propertyNameLocation = colonNameIdentifier.GetLocation();
+                }
+                else
+                {
+                    propertyName = param.Identifier.ValueText;
+                    propertyNameLocation = param.Identifier.GetLocation();
+                }
+
+                if (!this.MemberNames.Contains(propertyName))
+                {
+                    var property = new SynthesizedPropertySymbol(propertyName, propertyNameLocation, this, type);
+                    result.NonTypeNonIndexerMembers.Add(property);
+                    result.NonTypeNonIndexerMembers.Add(property.BackingField);
+                    AddInitializer(ref instanceInitializers, property.BackingField, param);
+                }
+
+                isParameterTypes.Add(type);
+                isParameterNames.Add(param.Identifier.ValueText);
+                propertiesForParameters.Add(propertyName);
+            }
+
+            
+
+            if (!this.MemberNames.Contains(WellKnownMemberNames.IsOperatorName))
+            {
+                var boolType = binder.Compilation.GetSpecialType(SpecialType.System_Boolean);
+                var isOperator = new SynthesizedIsOperator(this, isParameterTypes.ToImmutableAndFree(), isParameterNames.ToImmutableAndFree(), propertiesForParameters.ToImmutableAndFree(), boolType);
+                result.NonTypeNonIndexerMembers.Add(isOperator);
+            }
+
+            if (!this.MemberNames.Contains(WellKnownMemberNames.ObjectGetHashCode))
+            {
+                var intType = binder.Compilation.GetSpecialType(SpecialType.System_Int32);
+                var getHashCodeMethod = new SynthesizedGetHashCodeMethod(this, intType);
+                result.NonTypeNonIndexerMembers.Add(getHashCodeMethod);
+            }
+
+            if (!this.MemberNames.Contains(WellKnownMemberNames.ObjectEquals))
+            {
+                var boolType = binder.Compilation.GetSpecialType(SpecialType.System_Boolean);
+                var objectType = binder.Compilation.GetSpecialType(SpecialType.System_Object);
+
+                var objectEquals = new SynthesizedEqualsMethod(this, boolType, objectType);
+                result.NonTypeNonIndexerMembers.Add(objectEquals);
+            }
+
+            AddInitializers(ref result.InstanceInitializers, recordDeclaration, instanceInitializers);
         }
 
         private static bool IsGlobalCodeAllowed(CSharpSyntaxNode parent)

@@ -129,6 +129,7 @@
     <Compile Include="Semantics\NameCollisionTests.cs" />
     <Compile Include="Semantics\NamedAndOptionalTests.cs" />
     <Compile Include="Semantics\NameLengthTests.cs" />
+    <Compile Include="Semantics\PatternMatchingTests.cs" />
     <Compile Include="Semantics\NameOfTests.cs" />
     <Compile Include="Semantics\NullableConversionTests.cs" />
     <Compile Include="Semantics\NullableTests.cs" />

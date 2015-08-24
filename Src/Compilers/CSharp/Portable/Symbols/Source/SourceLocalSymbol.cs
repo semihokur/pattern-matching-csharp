@@ -244,7 +244,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
             Debug.Assert((object)originalType == null ||
                 originalType.IsErrorType() && newType.IsErrorType() ||
-                originalType == newType);
+                originalType == newType ||
+                declarationKind == LocalDeclarationKind.Pattern);
 
             if ((object)originalType == null)
             {
@@ -286,6 +287,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                         node = identifierToken.Parent.FirstAncestorOrSelf<ForEachStatementSyntax>();
                         break;
 
+                    case LocalDeclarationKind.Pattern:
+                        node = identifierToken.Parent.FirstAncestorOrSelf<DeclarationPatternSyntax>();
+                        break;
                     default:
                         throw ExceptionUtilities.UnexpectedValue(declarationKind);
                 }

@@ -14,10 +14,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 {
     internal sealed class SourceConstructorSymbol : SourceMethodSymbol
     {
-        private ImmutableArray<ParameterSymbol> lazyParameters;
-        private TypeSymbol lazyReturnType;
-        private bool lazyIsVararg;
-
         public static SourceConstructorSymbol CreateConstructorSymbol(
             SourceMemberContainerTypeSymbol containingType,
             ConstructorDeclarationSyntax syntax,
@@ -35,6 +31,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             return new SourceConstructorSymbol(containingType, syntax.GetLocation(), syntax, diagnostics);
         }
 
+        private ImmutableArray<ParameterSymbol> lazyParameters;
+        private TypeSymbol lazyReturnType;
+        private bool lazyIsVararg;
+
+        public static SourceConstructorSymbol CreatePrimaryConstructorSymbol(
+            SourceMemberContainerTypeSymbol containingType,
+            RecordParameterListSyntax syntax,
+            DiagnosticBag diagnostics)
+        {
+            return new SourceConstructorSymbol(containingType, syntax.GetLocation(), syntax, diagnostics);
+        }
+
         private SourceConstructorSymbol(
             SourceMemberContainerTypeSymbol containingType,
             Location location,
@@ -45,6 +53,31 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             var declarationModifiers = (containingType.IsAbstract ? DeclarationModifiers.Protected : DeclarationModifiers.Public) | DeclarationModifiers.PrimaryCtor;
             this.flags = MakeFlags(MethodKind.Constructor, declarationModifiers, returnsVoid: true, isExtensionMethod: false);
             this.CheckModifiers(MethodKind.Constructor, location, diagnostics);
+        }
+
+        private SourceConstructorSymbol(
+            SourceMemberContainerTypeSymbol containingType,
+            Location location,
+            RecordParameterListSyntax syntax,
+            DiagnosticBag diagnostics) :
+            base(containingType, syntax.GetReference(), GetPrimaryConstructorBlockSyntaxReferenceOrNull(syntax), ImmutableArray.Create(location))
+        {
+            var declarationModifiers = (containingType.IsAbstract ? DeclarationModifiers.Protected : DeclarationModifiers.Public) | DeclarationModifiers.PrimaryCtor;
+            this.flags = MakeFlags(MethodKind.Constructor, declarationModifiers, returnsVoid: true, isExtensionMethod: false);
+            this.CheckModifiers(MethodKind.Constructor, location, diagnostics);
+        }
+
+        private static SyntaxReference GetPrimaryConstructorBlockSyntaxReferenceOrNull(CSharpSyntaxNode syntax)
+        {
+            foreach (var m in ((TypeDeclarationSyntax)syntax.Parent).Members)
+            {
+                if (m.Kind == SyntaxKind.PrimaryConstructorBody)
+                {
+                    return ((PrimaryConstructorBodySyntax)m).Body.GetReference();
+                }
+            }
+
+            return null;
         }
 
         private SourceConstructorSymbol(
@@ -80,42 +113,48 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             }
         }
 
-        private static SyntaxReference GetPrimaryConstructorBlockSyntaxReferenceOrNull(ParameterListSyntax syntax)
-        {
-            foreach (var m in ((TypeDeclarationSyntax)syntax.Parent).Members)
-            {
-                if (m.Kind == SyntaxKind.PrimaryConstructorBody)
-                {
-                    return ((PrimaryConstructorBodySyntax)m).Body.GetReference();
-                }
-            }
-
-            return null;
-        }
-
         protected override void MethodChecks(DiagnosticBag diagnostics)
         {
             var syntax = (CSharpSyntaxNode)syntaxReference.GetSyntax();
             var binderFactory = this.DeclaringCompilation.GetBinderFactory(syntaxReference.SyntaxTree);
-            ParameterListSyntax parameterList;
+
+            ParameterListSyntax parameterList = null;
+            RecordParameterListSyntax recordParameterList = null;
+            Binder bodyBinder = null;
+            SyntaxToken arglistToken;
 
             if (syntax.Kind == SyntaxKind.ParameterList)
             {
                 // Primary constructor case
                 parameterList = (ParameterListSyntax)syntax;
+
+                // NOTE: if we asked for the binder for the body of the constructor, we'd risk a stack overflow because
+                // we might still be constructing the member list of the containing type.  However, getting the binder
+                // for the parameters should be safe.
+            }
+            else if (syntax.Kind == SyntaxKind.RecordParameterList)
+            {
+                recordParameterList = (RecordParameterListSyntax)syntax;
             }
             else
             {
                 parameterList = ((ConstructorDeclarationSyntax)syntax).ParameterList;
             }
 
-            // NOTE: if we asked for the binder for the body of the constructor, we'd risk a stack overflow because
-            // we might still be constructing the member list of the containing type.  However, getting the binder
-            // for the parameters should be safe.
-            var bodyBinder = binderFactory.GetBinder(parameterList).WithContainingMemberOrLambda(this);
 
-            SyntaxToken arglistToken;
+            if (parameterList != null)
+            {
+                bodyBinder = binderFactory.GetBinder(parameterList).WithContainingMemberOrLambda(this);
             this.lazyParameters = ParameterHelpers.MakeParameters(bodyBinder, this, parameterList, true, out arglistToken, diagnostics);
+            }
+            else
+            {
+                bodyBinder = binderFactory.GetBinder(recordParameterList).WithContainingMemberOrLambda(this);
+                this.lazyParameters = ParameterHelpers.MakeRecordParameters(bodyBinder, this, recordParameterList, true, out arglistToken, diagnostics);
+            }
+
+
+
             this.lazyIsVararg = (arglistToken.CSharpKind() == SyntaxKind.ArgListKeyword);
             this.lazyReturnType = bodyBinder.GetSpecialType(SpecialType.System_Void, diagnostics, syntax);
 
@@ -178,6 +217,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 {
                     // Primary constructor
                     return ((ParameterListSyntax)syntax).ParameterCount;
+                }
+                else if (syntax.Kind == SyntaxKind.RecordParameterList)
+                {
+                    return ((RecordParameterListSyntax)syntax).ParameterCount;
                 }
 
                 return ((ConstructorDeclarationSyntax)syntax).ParameterList.ParameterCount;

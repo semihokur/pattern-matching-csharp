@@ -606,6 +606,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             }
         }
 
+        internal virtual bool IsRecord
+        {
+            get
+            {
+                return false;
+            }
+        }
+
         internal virtual bool IsMetadataSealed
         {
             get

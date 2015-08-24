@@ -49,5 +49,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         /// User defined local variable declared by <see cref="ForEachStatementSyntax"/>.
         /// </summary>
         ForEachIterationVariable,
+
+        /// <summary>
+        /// User defined local variable declared by <see cref="DeclarationPatternSyntax"/>.
+        /// </summary>
+        Pattern
     }
 }

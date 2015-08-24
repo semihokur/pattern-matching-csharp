@@ -76,6 +76,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return VisitExpressionStatement(node as BoundExpressionStatement, arg);
                 case BoundKind.SwitchStatement:
                     return VisitSwitchStatement(node as BoundSwitchStatement, arg);
+                case BoundKind.MatchStatement:
+                    return VisitMatchStatement(node as BoundMatchStatement, arg);
                 case BoundKind.BreakStatement:
                     return VisitBreakStatement(node as BoundBreakStatement, arg);
                 case BoundKind.ContinueStatement:
@@ -118,6 +120,16 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return VisitLambda(node as BoundLambda, arg);
                 case BoundKind.NameOfOperator:
                     return VisitNameOfOperator(node as BoundNameOfOperator, arg);
+                case BoundKind.MatchExpression:
+                    return VisitMatchExpression(node as BoundMatchExpression, arg);
+                case BoundKind.ConstantPattern:
+                    return VisitConstantPattern(node as BoundConstantPattern, arg);
+                case BoundKind.DeclarationPattern:
+                    return VisitDeclarationPattern(node as BoundDeclarationPattern, arg);
+                case BoundKind.WildCardPattern:
+                    return VisitWildCardPattern(node as BoundWildCardPattern, arg);
+                case BoundKind.RecursivePattern:
+                    return VisitRecursivePattern(node as BoundRecursivePattern, arg);
             }
 
             return VisitInternal(node, arg);

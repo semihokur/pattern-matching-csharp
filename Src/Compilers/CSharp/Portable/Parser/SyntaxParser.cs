@@ -33,6 +33,23 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
         private BlendedNode[] blendedTokens;
 
+        private bool? isRecordsEnabled;
+        
+        // Iterating through preprocessorsymbols is expensive whenever a pattern matching related feature is trying to be parsed.
+        // We can provide a property and flag to prevent re-iterating everytime. 
+        // I did not want to introduce a property and flag to this class.
+        internal bool IsRecordsEnabled
+        {
+            get
+            {
+                if (!isRecordsEnabled.HasValue)
+                {
+                    isRecordsEnabled = this.Options.IsRecordsEnabled();
+                }
+                return isRecordsEnabled.Value;
+            }
+        }
+
         protected SyntaxParser(
             Lexer lexer,
             LexerMode mode,

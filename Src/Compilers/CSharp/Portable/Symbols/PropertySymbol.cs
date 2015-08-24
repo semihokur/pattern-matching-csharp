@@ -471,5 +471,16 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         }
 
         #endregion Equality
+
+        // It is needed because SynthesizedBackingFieldSymbol needs to call its property's HasPointerType method.
+        // Previously, SynthesizedBackingFieldSymbol's property is a type of SourcePropertySymbol. 
+        // Now, it is a type of PropertySymbol because it also needs to support SynthesizedPropertySymbol 
+        internal virtual bool HasPointerType
+        {
+            get
+            {
+                return this.Type.IsPointerType();
+            }
+        }
     }
 }

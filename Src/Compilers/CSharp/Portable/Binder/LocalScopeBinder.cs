@@ -230,6 +230,23 @@ namespace Microsoft.CodeAnalysis.CSharp
                 }
             }
 
+            public override void VisitDeclarationPattern(DeclarationPatternSyntax node)
+            {
+                if (Locals == null)
+                {
+                    Locals = ArrayBuilder<LocalSymbol>.GetInstance();
+                }
+
+                var localSymbol = SourceLocalSymbol.MakeLocal(
+                    Binder.ContainingMemberOrLambda,
+                    Binder,
+                    node.Type,
+                    node.Identifier,
+                    LocalDeclarationKind.Pattern);
+
+                Locals.Add(localSymbol);
+            }
+
             public override void VisitDeclarationExpression(DeclarationExpressionSyntax node)
             {
                 Debug.Assert(scopeSegmentRoot != null);

@@ -405,6 +405,9 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case SyntaxKind.IsExpression:
                     return BindIsOperator((BinaryExpressionSyntax)node, diagnostics);
 
+                case SyntaxKind.MatchExpression:
+                    return BindMatchExpression((MatchExpressionSyntax)node, diagnostics);
+
                 case SyntaxKind.AsExpression:
                     return BindAsOperator((BinaryExpressionSyntax)node, diagnostics);
 
@@ -543,7 +546,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             TypeSymbol declType = BindVariableType(node, diagnostics, typeSyntax, ref isConst, out isVar, out alias);
 
             SourceLocalSymbol localSymbol = this.LookupLocal(node.Variable.Identifier);
-
+            
             if ((object)localSymbol == null)
             {
                 Error(diagnostics, ErrorCode.ERR_DeclarationExpressionOutOfContext, node);
@@ -1165,7 +1168,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     Error(diagnostics, ErrorCode.ERR_NameNotInContext, node, node.Identifier.ValueText);
                 }
             }
-
+            
             lookupResult.Free();
             return expression;
         }

@@ -175,6 +175,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         private void CheckValueParameters(DiagnosticBag diagnostics)
         {
             // SPEC: The parameters of an operator must be value parameters.
+
+            if (name == WellKnownMemberNames.IsOperatorName)
+                return;
+
             foreach (var p in this.Parameters)
             {
                 if (p.RefKind != RefKind.None)

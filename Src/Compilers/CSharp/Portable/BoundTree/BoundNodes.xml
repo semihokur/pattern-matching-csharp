@@ -661,6 +661,27 @@
     <Field Name="ExpressionOpt" Type="BoundExpression" Null="allow"/>
   </Node>
 
+  <Node Name="BoundMatchStatement" Base="BoundStatement">
+    <!-- Locals declared by the switch expression, should be moved into an outer block by the local rewriter. -->
+    <Field Name="OuterLocals" Type="ImmutableArray&lt;LocalSymbol&gt;"/>
+    <Field Name="BoundExpression" Type="BoundExpression"/>
+
+    <!-- Locals declared immediately within the switch block. -->
+    <Field Name="InnerLocals" Type="ImmutableArray&lt;LocalSymbol&gt;"/>
+    <Field Name="MatchSections" Type="ImmutableArray&lt;BoundMatchSection&gt;"/>
+    <Field Name="BreakLabel" Type="GeneratedLabelSymbol"/>
+  </Node>
+
+  <Node Name="BoundMatchSection" Base="BoundStatementList">
+    <Field Name="BoundMatchLabels" Type="ImmutableArray&lt;BoundMatchLabel&gt;"/>
+  </Node>
+
+  <Node Name="BoundMatchLabel" Base="BoundNode">
+    <Field Name="Label" Type="LabelSymbol" Null="allow"/>
+    <Field Name="PatternOpt" Type="BoundPattern" Null="allow"/>
+    <Field Name="ConditionOpt" Type="BoundExpression" Null="allow"/>
+  </Node>
+  
   <Node Name="BoundBreakStatement" Base="BoundStatement">
     <Field Name="Label" Type="GeneratedLabelSymbol" />
   </Node>
@@ -1326,5 +1347,38 @@
     <Field Name="Type" Type="TypeSymbol" Override="true" Null="disallow"/>
     <Field Name="Symbols" Type="ImmutableArray&lt;Symbol&gt;" Null="disallow"/>
     <Field Name="ConstantValueOpt" Type="ConstantValue" Null="disallow"/>
+  </Node>
+
+  <Node Name="BoundMatchExpression" Base="BoundExpression">
+    <Field Name="Type" Type="TypeSymbol" Override="true" Null="disallow"/>
+    <Field Name="Operand" Type="BoundExpression"/>
+    <Field Name="Pattern" Type="BoundPattern"/>
+  </Node>
+
+  <AbstractNode Name="BoundPattern" Base="BoundNode">
+  </AbstractNode>
+
+  <Node Name="BoundConstantPattern" Base="BoundPattern">
+    <Field Name="BoundConstant" Type="BoundExpression"/>
+  </Node>
+
+  <Node Name="BoundDeclarationPattern" Base="BoundPattern">
+    <Field Name="LocalSymbol" Type="LocalSymbol"/>
+  </Node>
+
+  <Node Name="BoundWildCardPattern" Base="BoundPattern">
+  </Node>
+  
+  <Node Name="BoundRecursivePattern" Base="BoundPattern">
+    <Field Name="Type" Type="TypeSymbol" Null="disallow"/>
+    <Field Name="IsOperator" Type="MethodSymbol" Null="allow"/>
+    <Field Name="Patterns" Type="ImmutableArray&lt;BoundPattern&gt;" Null="disallow"/>
+    <Field Name="PatternsToParams" Type="ImmutableArray&lt;int&gt;" Null="disallow"/>
+  </Node>
+
+  <Node Name="BoundPropertyPattern" Base="BoundPattern">
+    <Field Name="Type" Type="TypeSymbol" Null="disallow"/>
+    <Field Name="Patterns" Type="ImmutableArray&lt;BoundPattern&gt;" Null="disallow"/>
+    <Field Name="Properties" Type="ImmutableArray&lt;PropertySymbol&gt;" Null="disallow"/>
   </Node>
 </Tree>
